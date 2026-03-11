@@ -1,0 +1,378 @@
+---
+title: Authentication
+description: Configure secure access to your Tinybird Web Analytics Dashboard
+---
+
+The dashboard includes built-in authentication to protect your analytics data. It supports two authentication modes: basic authentication and Tinybird token-based authentication.
+
+## Authentication Modes
+
+The dashboard provides two ways to authenticate:
+
+<CardGroup cols={2}>
+  <Card title="Basic Authentication" icon="lock">
+    Username and password authentication with session management
+  </Card>
+  <Card title="Token Authentication" icon="key">
+    Direct authentication using Tinybird workspace tokens
+  </Card>
+</CardGroup>
+
+## Basic Authentication
+
+The default authentication method uses username/password credentials managed through environment variables.
+
+### Configuration
+
+Set up basic authentication by configuring these environment variables:
+
+<CodeGroup>
+```bash .env
+# Dashboard Basic Auth (server-only, defaults to admin/admin if not set)
+DASHBOARD_USERNAME=admin
+DASHBOARD_PASSWORD=changeme
+
+# Optional: Set to "true" to disable auth during development
+DISABLE_AUTH=false
+```
+</CodeGroup>
+
+<Warning>
+  **Security Alert**: The default credentials are `admin/admin`. Always change these in production!
+</Warning>
+
+<ParamField path="DASHBOARD_USERNAME" type="string" default="admin">
+  The username for dashboard access. Users will enter this when signing in.
+</ParamField>
+
+<ParamField path="DASHBOARD_PASSWORD" type="string" default="admin">
+  The password for dashboard access. Use a strong, unique password in production.
+</ParamField>
+
+<ParamField path="DISABLE_AUTH" type="boolean" default="false">
+  Set to `true` to disable authentication during local development.
+  
+  <Warning>
+    Never set `DISABLE_AUTH=true` in production environments!
+  </Warning>
+</ParamField>
+
+### How It Works
+
+When a user visits the dashboard:
+
+<Steps>
+  <Step title="Authentication Check">
+    The middleware checks for a valid session cookie. If missing, an authentication dialog appears.
+  </Step>
+  
+  <Step title="User Sign In">
+    The user enters their username and password in the sign-in form.
+  </Step>
+  
+  <Step title="Session Creation">
+    On successful authentication, a session cookie (`dashboard_session`) is created.
+  </Step>
+  
+  <Step title="Protected Access">
+    All subsequent requests include the session cookie, granting access to the dashboard and API routes.
+  </Step>
+</Steps>
+
+### Authentication Middleware
+
+The dashboard uses Next.js middleware to protect routes:
+
+<CodeGroup>
+```typescript middleware.ts (excerpt)
+import { NextRequest, NextResponse } from 'next/server'
+
+const SESSION_COOKIE_NAME = 'dashboard_session'
+
+export function middleware(request: NextRequest) {
+  // Skip auth if disabled (for development)
+  if (process.env.DISABLE_AUTH === 'true') {
+    return NextResponse.next()
+  }
+
+  const { pathname } = request.nextUrl
+
+  // Allow auth API routes
+  if (pathname.startsWith('/api/auth')) {
+    return NextResponse.next()
+  }
+
+  // Check for session cookie
+  const sessionCookie = request.cookies.get(SESSION_COOKIE_NAME)
+
+  if (!sessionCookie?.value) {
+    // For API routes, return 401
+    if (pathname.startsWith('/api')) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+    // For pages, show auth dialog
+    const response = NextResponse.next()
+    response.headers.set('x-auth-status', 'unauthenticated')
+    return response
+  }
+
+  return NextResponse.next()
+}
+```
+</CodeGroup>
+
+<Note>
+  The middleware protects all routes except static files, Next.js internals, and the authentication API itself.
+</Note>
+
+### Sign Out
+
+Users can sign out using the workspace menu in the header:
+
+1. Click the workspace menu in the top-right corner
+2. Select "Sign Out"
+3. The session cookie is cleared and the user is redirected to the login screen
+
+## Token Authentication
+
+For advanced use cases, users can authenticate directly with a Tinybird workspace token.
+
+### Using Token Authentication
+
+<Steps>
+  <Step title="Open Auth Dialog">
+    Click the "Tinybird Token" tab in the authentication dialog.
+  </Step>
+  
+  <Step title="Enter Token">
+    Paste your Tinybird workspace admin token.
+    
+    <Note>
+      Get your token from [Tinybird Console → Tokens](https://cloud.tinybird.co/tokens)
+    </Note>
+  </Step>
+  
+  <Step title="Select Host (if needed)">
+    If the token doesn't include host information, select your Tinybird region:
+    - EU Shared: `https://api.tinybird.co`
+    - US East: `https://api.us-east.tinybird.co`
+    - AWS regions: `https://api.{region}.aws.tinybird.co`
+    - Local development: `http://localhost:7181`
+  </Step>
+  
+  <Step title="Enter Tenant ID (optional)">
+    For multi-tenant deployments, specify the tenant ID to filter data.
+  </Step>
+  
+  <Step title="View Dashboard">
+    Click "View dashboard" to create a scoped JWT and access the dashboard.
+  </Step>
+</Steps>
+
+### Token Scoping
+
+When using token authentication, the dashboard automatically creates a scoped JWT with read-only permissions:
+
+<CodeGroup>
+```typescript AuthDialog.tsx (excerpt)
+export async function createJwt(
+  token: string,
+  tenant_id: string
+): Promise<string> {
+  const expiration_time = Math.floor(Date.now() / 1000) + 30 * 24 * 60 * 60
+  const workspace_id = extractWorkspaceIdFromToken(token)
+  
+  const resources = [
+    'domains',
+    'top_sources',
+    'top_devices',
+    'kpis',
+    'top_locations',
+    'top_browsers',
+    'top_pages',
+    'trend',
+    'domain',
+    'current_visitors',
+    'web_vitals_current',
+    'web_vitals_routes',
+    'web_vitals_distribution',
+    'web_vitals_events',
+    'web_vitals_timeseries',
+    'analytics_hits',
+    'actions',
+  ]
+
+  const payload = {
+    workspace_id: workspace_id,
+    name: 'frontend_jwt',
+    exp: expiration_time,
+    scopes: [
+      ...resources.map(resource => ({
+        type: 'PIPES:READ',
+        resource,
+        fixed_params: tenant_id ? { tenant_id } : {},
+      })),
+    ],
+  }
+  
+  const key = new TextEncoder().encode(token)
+  return await new SignJWT(payload)
+    .setProtectedHeader({ alg: 'HS256' })
+    .setExpirationTime(expiration_time)
+    .sign(key)
+}
+```
+</CodeGroup>
+
+<Note>
+  The scoped JWT has read-only access to analytics pipes and expires after 30 days.
+</Note>
+
+### URL Parameters
+
+When using token authentication, credentials are passed via URL parameters:
+
+- `?token=<scoped-jwt>` - The generated JWT token
+- `?host=<tinybird-host>` - The Tinybird API host
+- `?tenant_id=<tenant>` (optional) - The tenant ID for filtering
+- `?workspace=<name>` (optional) - The workspace name for display
+
+<Warning>
+  URLs with tokens should be kept private and not shared publicly.
+</Warning>
+
+## Public Mode
+
+For embedded dashboards or public analytics, you can bypass authentication by passing tokens in HTTP headers:
+
+<CodeGroup>
+```bash cURL Example
+curl https://your-dashboard.vercel.app/api/endpoints/kpis \
+  -H "X-Tinybird-Token: your-token" \
+  -H "X-Tinybird-Host: https://api.tinybird.co"
+```
+</CodeGroup>
+
+The middleware allows requests with these headers to bypass authentication:
+
+```typescript
+// Check for token auth from headers (public mode)
+const headerToken = request.headers.get('X-Tinybird-Token')
+const headerHost = request.headers.get('X-Tinybird-Host')
+if (headerToken && headerHost) {
+  return NextResponse.next()
+}
+```
+
+## Multi-Tenant Authentication
+
+For multi-tenant deployments where multiple customers share the same dashboard:
+
+<Steps>
+  <Step title="Configure Tenant ID">
+    Set the `TENANT_ID` environment variable or pass it during token authentication.
+  </Step>
+  
+  <Step title="Data Filtering">
+    All queries automatically filter by `tenant_id = 'your-tenant-id'`.
+  </Step>
+  
+  <Step title="Scoped Tokens">
+    JWT tokens include fixed parameters to enforce tenant isolation:
+    
+    ```typescript
+    fixed_params: tenant_id ? { tenant_id } : {}
+    ```
+  </Step>
+</Steps>
+
+<Note>
+  Multi-tenant mode requires your Tinybird data project to include a `tenant_id` column in all analytics tables.
+</Note>
+
+## Development Mode
+
+During local development, you can disable authentication to speed up iteration:
+
+<CodeGroup>
+```bash .env.local
+DISABLE_AUTH=true
+```
+</CodeGroup>
+
+<Steps>
+  <Step title="Start Development Server">
+    ```bash
+    pnpm dev
+    ```
+  </Step>
+  
+  <Step title="Access Dashboard">
+    Open `http://localhost:3000` - no authentication required.
+  </Step>
+</Steps>
+
+<Warning>
+  Remember to set `DISABLE_AUTH=false` before deploying to production!
+</Warning>
+
+## Security Best Practices
+
+<AccordionGroup>
+  <Accordion title="Use Strong Passwords">
+    Choose a strong, unique password for `DASHBOARD_PASSWORD`. Consider using a password manager to generate and store it.
+  </Accordion>
+  
+  <Accordion title="Rotate Credentials Regularly">
+    Change your dashboard password and Tinybird tokens periodically, especially if team members leave.
+  </Accordion>
+  
+  <Accordion title="Limit Token Permissions">
+    Use tokens with the minimum required permissions. Read-only tokens are sufficient for the dashboard.
+  </Accordion>
+  
+  <Accordion title="Enable HTTPS">
+    Always use HTTPS in production to encrypt authentication credentials in transit.
+  </Accordion>
+  
+  <Accordion title="Monitor Access Logs">
+    Review Vercel logs and Tinybird access logs to detect unauthorized access attempts.
+  </Accordion>
+  
+  <Accordion title="Don't Commit Secrets">
+    Never commit `.env` files to version control. Use `.env.example` for templates only.
+  </Accordion>
+</AccordionGroup>
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Authentication loop / Can't sign in">
+    1. Clear browser cookies and try again
+    2. Verify `DASHBOARD_USERNAME` and `DASHBOARD_PASSWORD` are set correctly
+    3. Check browser console for errors
+    4. Ensure session cookies are not blocked
+  </Accordion>
+  
+  <Accordion title="Token authentication fails">
+    1. Verify the token is valid in [Tinybird Console](https://cloud.tinybird.co/tokens)
+    2. Check the token has read permissions for all pipes
+    3. Confirm the host URL matches your workspace region
+    4. Try creating a new admin token
+  </Accordion>
+  
+  <Accordion title="Logged out unexpectedly">
+    Session cookies expire after a period of inactivity. Simply sign in again to continue.
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Deploy to Production" icon="rocket" href="/dashboard/deployment">
+    Learn how to deploy your dashboard with proper authentication
+  </Card>
+  <Card title="Customize the Dashboard" icon="palette" href="/dashboard/customization">
+    Adapt the UI to match your brand
+  </Card>
+</CardGroup>

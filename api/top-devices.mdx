@@ -1,0 +1,207 @@
+---
+title: 'Top Devices'
+description: 'Get top device types ranked by visits with optional previous period comparison'
+---
+
+## Overview
+
+The `top_devices` endpoint returns the most used device types ranked by number of visits. It supports pagination and optional comparison with the previous period.
+
+## Endpoint
+
+```
+GET https://api.tinybird.co/v0/pipes/top_devices.json
+```
+
+## Parameters
+
+<ParamField query="date_from" type="string" optional>
+  Start date (YYYY-MM-DD format). Defaults to 7 days ago.
+</ParamField>
+
+<ParamField query="date_to" type="string" optional>
+  End date (YYYY-MM-DD format). Defaults to today.
+</ParamField>
+
+<ParamField query="tenant_id" type="string" optional>
+  Filter by tenant ID
+</ParamField>
+
+<ParamField query="domain" type="string" optional>
+  Filter by domain
+</ParamField>
+
+<ParamField query="include_previous_period" type="string" optional>
+  Set to "true" to include previous period comparison and growth percentages
+</ParamField>
+
+<ParamField query="skip" type="int32" optional default="0">
+  Skip for pagination (offset)
+</ParamField>
+
+<ParamField query="limit" type="int32" optional default="50">
+  Limit for pagination (max results)
+</ParamField>
+
+## SQL Query
+
+The endpoint aggregates device data from `analytics_sessions_mv`:
+
+```sql
+SELECT
+    device,
+    uniq(session_id) as current_visits,
+    countMerge(hits) as current_hits
+FROM analytics_sessions_mv
+WHERE date >= (SELECT current_start FROM date_calculations)
+    AND date <= (SELECT current_end FROM date_calculations)
+    {% if defined(tenant_id) %}
+    AND tenant_id = {{ String(tenant_id, description="Filter by tenant ID") }}
+    {% end %}
+    {% if defined(domain) %}
+    AND domain = {{ String(domain, description="Filter by domain") }}
+    {% end %}
+GROUP BY device
+```
+
+## Response
+
+<ResponseField name="device" type="string" required>
+  The device type (e.g., "Desktop", "Mobile", "Tablet")
+</ResponseField>
+
+<ResponseField name="visits" type="uint64" required>
+  Number of unique visits from this device type
+</ResponseField>
+
+<ResponseField name="hits" type="uint64" required>
+  Total number of pageviews from this device type
+</ResponseField>
+
+<ResponseField name="previous_visits" type="uint64">
+  Previous period visits (only when include_previous_period=true)
+</ResponseField>
+
+<ResponseField name="previous_hits" type="uint64">
+  Previous period pageviews (only when include_previous_period=true)
+</ResponseField>
+
+<ResponseField name="visits_growth_percentage" type="float64">
+  Percentage change in visits (only when include_previous_period=true)
+</ResponseField>
+
+<ResponseField name="hits_growth_percentage" type="float64">
+  Percentage change in pageviews (only when include_previous_period=true)
+</ResponseField>
+
+## TypeScript Usage
+
+```typescript
+import { Tinybird } from '@tinybirdco/sdk';
+import type { TopDevicesParams, TopDevicesOutput } from './endpoints';
+
+const tb = new Tinybird({ token: process.env.TINYBIRD_TOKEN });
+
+// Get top 50 device types (default)
+const result = await tb.exec<TopDevicesOutput>('top_devices');
+result.data.forEach(device => {
+  console.log(`${device.device}: ${device.visits} visits, ${device.hits} pageviews`);
+});
+
+// Get top devices for a specific date range
+const params: TopDevicesParams = {
+  date_from: '2024-01-01',
+  date_to: '2024-01-31',
+  domain: 'example.com',
+  limit: 10
+};
+const rangeResult = await tb.exec<TopDevicesOutput>('top_devices', params);
+
+// Get top devices with previous period comparison
+const comparisonParams: TopDevicesParams = {
+  date_from: '2024-01-01',
+  date_to: '2024-01-07',
+  include_previous_period: 'true'
+};
+const comparisonResult = await tb.exec<TopDevicesOutput>('top_devices', comparisonParams);
+comparisonResult.data.forEach(device => {
+  console.log(`${device.device}: ${device.visits} visits (${device.visits_growth_percentage}% growth)`);
+});
+
+// Calculate device distribution
+const deviceResult = await tb.exec<TopDevicesOutput>('top_devices');
+const totalVisits = deviceResult.data.reduce((sum, d) => sum + Number(d.visits), 0);
+deviceResult.data.forEach(device => {
+  const percentage = (Number(device.visits) / totalVisits * 100).toFixed(2);
+  console.log(`${device.device}: ${percentage}%`);
+});
+```
+
+## Example Response
+
+### Without Previous Period
+
+```json
+{
+  "data": [
+    {
+      "device": "Desktop",
+      "visits": 8234,
+      "hits": 18456
+    },
+    {
+      "device": "Mobile",
+      "visits": 6421,
+      "hits": 12345
+    },
+    {
+      "device": "Tablet",
+      "visits": 1234,
+      "hits": 2876
+    }
+  ]
+}
+```
+
+### With Previous Period
+
+```json
+{
+  "data": [
+    {
+      "device": "Desktop",
+      "visits": 8234,
+      "hits": 18456,
+      "previous_visits": 7654,
+      "previous_hits": 17234,
+      "visits_growth_percentage": 7.58,
+      "hits_growth_percentage": 7.09
+    },
+    {
+      "device": "Mobile",
+      "visits": 6421,
+      "hits": 12345,
+      "previous_visits": 5876,
+      "previous_hits": 11234,
+      "visits_growth_percentage": 9.27,
+      "hits_growth_percentage": 9.89
+    },
+    {
+      "device": "Tablet",
+      "visits": 1234,
+      "hits": 2876,
+      "previous_visits": 1187,
+      "previous_hits": 2754,
+      "visits_growth_percentage": 3.96,
+      "hits_growth_percentage": 4.43
+    }
+  ]
+}
+```
+
+## Notes
+
+- Device types are detected from User-Agent strings
+- Common device types include: Desktop, Mobile, Tablet
+- Results are ordered by visits in descending order
+- Use pagination parameters if needed, though device types are typically few

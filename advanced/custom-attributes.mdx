@@ -1,0 +1,386 @@
+---
+title: Custom Attributes
+description: Add custom data attributes to your tracking script for enhanced analytics
+---
+
+## Overview
+
+Custom attributes allow you to attach additional metadata to every event tracked by the analytics script. These attributes are automatically included in the `payload` field of your `analytics_events` datasource and can be used for filtering, segmentation, and custom analysis.
+
+## Attribute Naming Convention
+
+<Warning>
+All custom attributes **must** use the `data-tb-` prefix to be recognized and stored.
+</Warning>
+
+The prefix ensures that custom attributes are:
+- Distinguished from standard HTML data attributes
+- Automatically captured by the tracking script
+- Included in every event payload
+
+## Adding Custom Attributes
+
+### Basic Usage
+
+Add custom attributes directly to your tracking script tag:
+
+```html
+<script
+  defer
+  src="https://unpkg.com/@tinybirdco/flock.js"
+  data-token="YOUR_TRACKER_TOKEN"
+  data-tb-environment="production"
+  data-tb-app-version="2.5.0"
+  data-tb-customer-tier="premium"
+></script>
+```
+
+### How Attributes are Processed
+
+The tracking script converts attribute names and stores them in the payload:
+
+1. **Strip prefix**: `data-tb-` is removed
+2. **Convert hyphens**: Hyphens are converted to underscores
+3. **Store in payload**: Attributes are added to the JSON payload
+
+Example transformation:
+- `data-tb-app-version` → stored as `app_version` in payload
+- `data-tb-customer-tier` → stored as `customer_tier` in payload
+
+### Resulting Payload
+
+With the above script, every event will include:
+
+```json
+{
+  "environment": "production",
+  "app_version": "2.5.0",
+  "customer_tier": "premium",
+  "user-agent": "Mozilla/5.0...",
+  "locale": "en-US",
+  "location": "US",
+  "referrer": "https://example.com",
+  "pathname": "/dashboard",
+  "href": "https://app.example.com/dashboard"
+}
+```
+
+## Implementation Details
+
+The tracking script processes custom attributes using this code:
+
+```javascript
+let globalAttributes = {}
+
+if (document.currentScript) {
+  for (const attr of document.currentScript.attributes) {
+    if (attr.name.startsWith('data-tb-')) {
+      globalAttributes[attr.name.slice(8).replace(/-/g, '_')] = attr.value
+    }
+  }
+}
+```
+
+Attributes are then merged into every event:
+
+```javascript
+processedPayload = Object.assign({}, payload, globalAttributes)
+```
+
+## Common Use Cases
+
+### Application Environment
+
+Track which environment events are coming from:
+
+```html
+<script
+  src="https://unpkg.com/@tinybirdco/flock.js"
+  data-token="YOUR_TRACKER_TOKEN"
+  data-tb-environment="production"
+  data-tb-region="us-east-1"
+></script>
+```
+
+### User Segmentation
+
+Include user plan or tier information:
+
+```html
+<script
+  src="https://unpkg.com/@tinybirdco/flock.js"
+  data-token="YOUR_TRACKER_TOKEN"
+  data-tb-plan="enterprise"
+  data-tb-trial="false"
+  data-tb-onboarding-complete="true"
+></script>
+```
+
+### Application Version
+
+Track app version for correlating analytics with releases:
+
+```html
+<script
+  src="https://unpkg.com/@tinybirdco/flock.js"
+  data-token="YOUR_TRACKER_TOKEN"
+  data-tb-app-version="3.1.2"
+  data-tb-build="20240115-a3f2e1c"
+></script>
+```
+
+### Feature Flags
+
+Monitor usage of experimental features:
+
+```html
+<script
+  src="https://unpkg.com/@tinybirdco/flock.js"
+  data-token="YOUR_TRACKER_TOKEN"
+  data-tb-feature-new-editor="enabled"
+  data-tb-feature-ai-assist="enabled"
+></script>
+```
+
+### A/B Testing
+
+Track experiment variations:
+
+```html
+<script
+  src="https://unpkg.com/@tinybirdco/flock.js"
+  data-token="YOUR_TRACKER_TOKEN"
+  data-tb-experiment-checkout="variant-b"
+  data-tb-experiment-pricing="control"
+></script>
+```
+
+## Dynamic Attributes
+
+For single-page applications or when attributes need to be set dynamically:
+
+### Setting Attributes at Runtime
+
+```javascript
+// Create script element
+const script = document.createElement('script');
+script.src = 'https://unpkg.com/@tinybirdco/flock.js';
+script.setAttribute('data-token', 'YOUR_TRACKER_TOKEN');
+
+// Add custom attributes dynamically
+script.setAttribute('data-tb-user-role', currentUser.role);
+script.setAttribute('data-tb-workspace-id', currentWorkspace.id);
+script.setAttribute('data-tb-feature-flags', JSON.stringify(featureFlags));
+
+// Append to document
+document.head.appendChild(script);
+```
+
+### Server-Side Rendering
+
+For frameworks like Next.js, Nuxt, or SvelteKit:
+
+```jsx
+// React/Next.js example
+import Script from 'next/script';
+
+export default function AnalyticsScript({ user, workspace }) {
+  return (
+    <Script
+      src="https://unpkg.com/@tinybirdco/flock.js"
+      data-token={process.env.NEXT_PUBLIC_TINYBIRD_TOKEN}
+      data-tb-user-id={user.id}
+      data-tb-user-role={user.role}
+      data-tb-workspace-id={workspace.id}
+      data-tb-subscription-tier={workspace.tier}
+    />
+  );
+}
+```
+
+## Querying Custom Attributes
+
+### Extracting JSON Fields
+
+Custom attributes are stored in the `payload` column as JSON. Use ClickHouse JSON functions to query them:
+
+```sql
+SELECT
+  JSONExtractString(payload, 'customer_tier') as tier,
+  JSONExtractString(payload, 'app_version') as version,
+  count() as events
+FROM analytics_events
+WHERE toDate(timestamp) = today()
+GROUP BY tier, version
+ORDER BY events DESC
+```
+
+### Creating Custom Pipes
+
+Create a custom endpoint to analyze by custom attributes:
+
+```typescript
+export const eventsByTier = defineEndpoint("events_by_tier", {
+  nodes: [
+    node({
+      sql: `
+        SELECT
+          JSONExtractString(payload, 'customer_tier') as tier,
+          toDate(timestamp) as date,
+          uniq(session_id) as visits,
+          count() as events
+        FROM analytics_events
+        WHERE timestamp >= {{ DateTime(date_from) }}
+          AND timestamp < {{ DateTime(date_to) }}
+        GROUP BY tier, date
+        ORDER BY date DESC, events DESC
+      `,
+    }),
+  ],
+  params: {
+    date_from: p.dateTime().describe("Start date"),
+    date_to: p.dateTime().describe("End date"),
+  },
+  output: {
+    tier: t.string(),
+    date: t.date(),
+    visits: t.uint64(),
+    events: t.uint64(),
+  },
+});
+```
+
+### Filtering by Custom Attributes
+
+```sql
+SELECT
+  pathname,
+  count() as views
+FROM analytics_events
+WHERE action = 'page_hit'
+  AND JSONExtractString(payload, 'environment') = 'production'
+  AND JSONExtractString(payload, 'customer_tier') = 'enterprise'
+GROUP BY pathname
+ORDER BY views DESC
+LIMIT 10
+```
+
+## Best Practices
+
+<Check>
+**Do**: Use descriptive, kebab-case names for attributes (e.g., `data-tb-user-role`)
+</Check>
+
+<Check>
+**Do**: Keep attribute values simple (strings, numbers, booleans)
+</Check>
+
+<Check>
+**Do**: Document your custom attributes and their possible values
+</Check>
+
+<Check>
+**Do**: Use consistent naming conventions across your application
+</Check>
+
+<Warning>
+**Don't**: Include PII (personally identifiable information) in custom attributes
+</Warning>
+
+<Warning>
+**Don't**: Store sensitive data like passwords, tokens, or API keys
+</Warning>
+
+<Warning>
+**Don't**: Use excessively long strings (keep under 100 characters per attribute)
+</Warning>
+
+## Attribute Validation
+
+The tracking script includes automatic validation:
+
+- **Payload size limit**: Maximum 10KB (10,240 bytes)
+- **Payload structure**: Must be valid JSON
+- **Automatic masking**: Suspicious fields are automatically masked
+
+### Masked Attributes
+
+For security, these attribute names are automatically masked:
+
+- `username`, `user`, `user_id`, `userid`
+- `password`, `pass`, `pin`, `passcode`
+- `token`, `api_token`
+- `email`, `address`, `phone`
+- `sex`, `gender`
+- `order`, `order_id`, `orderid`
+- `payment`, `credit_card`
+
+Masked values are replaced with `"********"` before sending to Tinybird.
+
+## Advanced: Alternative Prefix
+
+The tracking script also supports the legacy `tb_` prefix (without `data-`):
+
+```html
+<script
+  src="https://unpkg.com/@tinybirdco/flock.js"
+  data-token="YOUR_TRACKER_TOKEN"
+  tb_environment="production"
+></script>
+```
+
+<Info>
+The `data-tb-` prefix is recommended for better HTML5 compliance and consistency.
+</Info>
+
+## Example: Complete Implementation
+
+```html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>My SaaS App</title>
+  
+  <script
+    defer
+    src="https://unpkg.com/@tinybirdco/flock.js"
+    data-token="p.eyJ1IjogIjdhZGRiOGMy..."
+    data-tb-environment="production"
+    data-tb-app-version="2.5.0"
+    data-tb-build="20240315-a3f2e1c"
+    data-tb-region="us-east-1"
+    data-tb-plan="enterprise"
+    data-tb-feature-new-editor="enabled"
+    data-tb-experiment-checkout="variant-b"
+  ></script>
+</head>
+<body>
+  <div id="app"></div>
+  
+  <script>
+    // Track custom events with the same attributes
+    Tinybird.trackEvent('button_click', {
+      button: 'upgrade-plan',
+      location: 'header'
+    });
+    
+    // All events will include the custom attributes
+    // from the script tag automatically
+  </script>
+</body>
+</html>
+```
+
+Every event (page hits and custom events) will include:
+- Standard tracking data (user-agent, location, referrer, etc.)
+- Your custom attributes (environment, app_version, build, etc.)
+- Event-specific data (button, location, etc.)
+
+## Related Resources
+
+- [Tracker Configuration](/tracking/configuration)
+- [Custom Events](/tracking/custom-events)
+- [Data Platform Datasources](/data-platform/datasources)
+- [Privacy & Security](/advanced/gdpr-compliance)

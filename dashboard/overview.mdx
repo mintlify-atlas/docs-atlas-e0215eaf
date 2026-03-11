@@ -1,0 +1,148 @@
+---
+title: Dashboard Overview
+description: Explore the features and capabilities of the Tinybird Web Analytics Dashboard
+---
+
+The Tinybird Web Analytics Dashboard is a real-time analytics visualization tool built with Next.js and React. It provides comprehensive insights into website traffic, user behavior, and performance metrics.
+
+## Features
+
+The dashboard offers two main analytics views:
+
+<CardGroup cols={2}>
+  <Card title="Web Analytics" icon="chart-line">
+    Real-time visitor tracking, page views, traffic sources, and audience insights
+  </Card>
+  <Card title="Speed Insights" icon="gauge">
+    Core Web Vitals monitoring including TTFB, FCP, LCP, CLS, and INP metrics
+  </Card>
+</CardGroup>
+
+### Analytics Tab
+
+The Analytics tab displays comprehensive website traffic data:
+
+- **Real-time Visitors**: Live count of current visitors on your website
+- **Visitors & Pageviews**: Time-series charts showing traffic trends
+- **Top Pages**: Most visited pages with engagement metrics
+- **Top Locations**: Geographic distribution of your audience
+- **Top Sources**: Traffic sources and referrers
+- **Top Devices**: Device type breakdown (desktop, mobile, tablet)
+- **Top Browsers**: Browser usage statistics
+
+### Speed Insights Tab
+
+Monitor Core Web Vitals across different percentiles (P75, P90, P95, P99):
+
+<Steps>
+  <Step title="TTFB (Time to First Byte)">
+    Measures server response time and network latency
+  </Step>
+  <Step title="FCP (First Contentful Paint)">
+    Time until the first content appears on screen
+  </Step>
+  <Step title="LCP (Largest Contentful Paint)">
+    Time until the largest content element is visible
+  </Step>
+  <Step title="CLS (Cumulative Layout Shift)">
+    Measures visual stability and layout shifts
+  </Step>
+  <Step title="INP (Interaction to Next Paint)">
+    Response time to user interactions
+  </Step>
+</Steps>
+
+## AI-Powered Insights
+
+The dashboard includes an AI chat interface powered by the Ask Tinybird endpoint:
+
+<Card title="Ask AI" icon="sparkles">
+  Query your analytics data using natural language. The AI assistant can generate SQL queries, create visualizations, and provide actionable insights.
+</Card>
+
+### AI Features
+
+- **Natural Language Queries**: Ask questions about your data in plain English
+- **Preloaded Insight Cards**: Quick access to common metrics and trends
+- **SQL Generation**: Automatically generates and executes SQL queries
+- **Interactive Visualizations**: Charts and tables rendered directly in the chat
+- **Context-Aware Responses**: Understands your workspace and data schema
+
+## Technology Stack
+
+The dashboard is built with modern web technologies:
+
+<CodeGroup>
+```json package.json (excerpt)
+{
+  "name": "@tinybirdco/analytics-dashboard",
+  "version": "1.4.0",
+  "dependencies": {
+    "next": "14.2.35",
+    "react": "^18.2.0",
+    "@tinybirdco/sdk": "^0.0.27",
+    "recharts": "^3.0.2",
+    "swr": "^2.2.5",
+    "ai": "^4.3.17"
+  }
+}
+```
+</CodeGroup>
+
+### Key Technologies
+
+- **[Next.js 14](https://nextjs.org/)**: React framework with App Router
+- **[React 18](https://react.dev/)**: UI component library
+- **[Vercel](https://vercel.com/)**: Deployment platform
+- **[Tailwind CSS](https://tailwindcss.com/)**: Utility-first styling
+- **[SWR](https://swr.vercel.app/)**: Data fetching and caching
+- **[Recharts](https://recharts.org/)**: Charting library
+- **[Tinybird SDK](https://www.tinybird.co/docs/api-reference/overview)**: API client for data queries
+- **[Vercel AI SDK](https://sdk.vercel.ai/)**: AI chat functionality
+
+## User Interface
+
+The dashboard features a clean, modern interface with:
+
+- **Responsive Design**: Optimized for desktop and mobile devices
+- **Dark Mode Support**: Theme variables for consistent styling
+- **Interactive Charts**: Hover tooltips and time range selection
+- **Real-time Updates**: Live data refresh using SWR
+- **Accessible Components**: Built with Radix UI primitives
+
+<Note>
+  The dashboard uses custom CSS variables for theming, making it easy to customize colors and typography to match your brand.
+</Note>
+
+## Time Range Selection
+
+Filter data across multiple time ranges:
+
+- Today
+- Yesterday
+- Last 7 days
+- Last 30 days
+- Last 3 months
+- Last 12 months
+- Custom date ranges
+
+## Domain Filtering
+
+If you track multiple websites, use the domain selector to filter analytics for specific domains.
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Deploy to Vercel" icon="rocket" href="/dashboard/deployment">
+    Learn how to deploy your dashboard to production
+  </Card>
+  <Card title="Authentication Setup" icon="lock" href="/dashboard/authentication">
+    Configure authentication and security settings
+  </Card>
+  <Card title="Customize Your Dashboard" icon="palette" href="/dashboard/customization">
+    Adapt the dashboard to your brand and needs
+  </Card>
+  <Card title="Tinybird Configuration" icon="gear" href="/data-platform/architecture">
+    Set up your Tinybird workspace and data project
+  </Card>
+</CardGroup>

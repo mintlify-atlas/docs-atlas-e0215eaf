@@ -1,0 +1,760 @@
+---
+title: 'Advanced Configuration'
+description: 'Deep dive into advanced configuration options for the Tinybird web analytics tracker'
+---
+
+## Overview
+
+Beyond basic installation, the Tinybird tracker offers advanced configuration options for proxying, storage, multi-tenancy, and custom attributes.
+
+## Proxy Configuration
+
+Route tracking requests through your own domain for improved privacy and ad-blocker bypass.
+
+### Why Use a Proxy?
+
+<CardGroup cols={2}>
+  <Card title="Privacy Compliance" icon="shield">
+    Keep analytics data within your domain for GDPR and privacy regulations
+  </Card>
+  <Card title="Ad-Blocker Bypass" icon="ban">
+    Reduce tracking blocked by ad-blockers that target third-party analytics domains
+  </Card>
+  <Card title="First-Party Cookies" icon="cookie">
+    Extend cookie lifetime with first-party domain cookies
+  </Card>
+  <Card title="Control" icon="gear">
+    Full control over the tracking endpoint and middleware
+  </Card>
+</CardGroup>
+
+### Simple Proxy
+
+Use `data-proxy` to specify your domain. The tracker appends `/api/tracking` automatically:
+
+```html
+<script
+  src="https://unpkg.com/@tinybirdco/flock.js"
+  data-token="YOUR_TOKEN"
+  data-proxy="https://yourdomain.com"
+></script>
+```
+
+Requests will be sent to: `https://yourdomain.com/api/tracking`
+
+### Custom Proxy URL
+
+Use `data-proxy-url` for full control over the endpoint:
+
+```html
+<script
+  src="https://unpkg.com/@tinybirdco/flock.js"
+  data-token="YOUR_TOKEN"
+  data-proxy-url="https://yourdomain.com/custom/tracking/endpoint"
+></script>
+```
+
+<Warning>
+  **Cannot use both:** `data-proxy` and `data-proxy-url` are mutually exclusive. The script will throw an error if both are present.
+</Warning>
+
+### Implementation
+
+From the source code (`middleware/src/index.js:23-27`):
+
+```javascript
+// Check if both proxy and proxyUrl are specified
+if (proxy && proxyUrl) {
+  console.error('Error: Both data-proxy and data-proxy-url are specified. Please use only one of them.')
+  throw new Error('Both data-proxy and data-proxy-url are specified. Please use only one of them.')
+}
+```
+
+### Proxy Middleware
+
+Implement a proxy endpoint that forwards requests to Tinybird. Example from `middleware/api/tracking.js`:
+
+```javascript
+import fetch from 'node-fetch';
+
+export const config = {
+    runtime: 'experimental-edge',
+};
+
+const DATASOURCE = 'analytics_events';
+
+const _postEvent = async event => {
+    const options = {
+        method: 'post',
+        body: event,
+        headers: {
+            'Authorization': `Bearer ${process.env.TINYBIRD_TOKEN}`,
+            'Content-Type': 'application/json'
+        }
+    };
+    const response = await fetch(
+      `https://api.tinybird.co/v0/events?name=${DATASOURCE}`, 
+      options
+    );
+    if (!response.ok) {
+        throw response.statusText;
+    }
+    return response.json();
+};
+
+export default async (req) => {
+    await _postEvent(req.body);
+    return new Response('ok', {
+        headers: {
+            'access-control-allow-credentials': true,
+            'access-control-allow-origin': process.env.CORS_ALLOW_ORIGIN || '*',
+            'access-control-allow-methods': 'OPTIONS,POST',
+            'access-control-allow-headers': 'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version',
+            'content-type': 'text/html'
+        },
+    });
+};
+```
+
+<Tabs>
+  <Tab title="Vercel">
+    Deploy the middleware as a Vercel Edge Function:
+    
+    ```javascript
+    // api/tracking.js
+    export const config = {
+      runtime: 'edge',
+    };
+    
+    export default async function handler(req) {
+      const response = await fetch(
+        `https://api.tinybird.co/v0/events?name=analytics_events`,
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${process.env.TINYBIRD_TOKEN}`,
+            'Content-Type': 'application/json'
+          },
+          body: req.body
+        }
+      );
+      return new Response('ok', { status: 200 });
+    }
+    ```
+  </Tab>
+  
+  <Tab title="Next.js">
+    Create an API route:
+    
+    ```typescript
+    // app/api/tracking/route.ts
+    export async function POST(request: Request) {
+      const body = await request.json();
+      
+      const response = await fetch(
+        `https://api.tinybird.co/v0/events?name=analytics_events`,
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${process.env.TINYBIRD_TOKEN}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(body)
+        }
+      );
+      
+      return new Response('ok', { status: 200 });
+    }
+    ```
+  </Tab>
+  
+  <Tab title="Cloudflare Workers">
+    Deploy as a Cloudflare Worker:
+    
+    ```javascript
+    export default {
+      async fetch(request, env) {
+        const body = await request.json();
+        
+        const response = await fetch(
+          `https://api.tinybird.co/v0/events?name=analytics_events`,
+          {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${env.TINYBIRD_TOKEN}`,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(body)
+          }
+        );
+        
+        return new Response('ok', { status: 200 });
+      }
+    }
+    ```
+  </Tab>
+</Tabs>
+
+## Storage Configuration
+
+Control how session IDs are stored in the browser.
+
+### Storage Methods
+
+<ParamField path="cookie" type="default">
+  Stores session ID in a cookie with 30-minute expiration.
+  
+  **Pros:** Works across tabs and windows
+  
+  **Cons:** Subject to cookie policies and browser restrictions
+</ParamField>
+
+<ParamField path="localStorage">
+  Stores session ID in localStorage with 30-minute expiration.
+  
+  **Pros:** Not affected by cookie policies, larger storage limit
+  
+  **Cons:** Same-origin only, not accessible from server
+</ParamField>
+
+<ParamField path="sessionStorage">
+  Stores session ID in sessionStorage with 30-minute expiration.
+  
+  **Pros:** Automatically clears when tab closes
+  
+  **Cons:** Not shared across tabs
+</ParamField>
+
+### Usage
+
+<CodeGroup>
+```html Cookie (Default)
+<script
+  src="https://unpkg.com/@tinybirdco/flock.js"
+  data-token="YOUR_TOKEN"
+  data-storage="cookie"
+></script>
+```
+
+```html localStorage
+<script
+  src="https://unpkg.com/@tinybirdco/flock.js"
+  data-token="YOUR_TOKEN"
+  data-storage="localStorage"
+></script>
+```
+
+```html sessionStorage
+<script
+  src="https://unpkg.com/@tinybirdco/flock.js"
+  data-token="YOUR_TOKEN"
+  data-storage="sessionStorage"
+></script>
+```
+</CodeGroup>
+
+### Implementation Details
+
+From the source code (`middleware/src/index.js:70-148`):
+
+<Tabs>
+  <Tab title="Get Session ID">
+    ```javascript
+    function _getSessionId() {
+      if (
+        [storageMethods.localStorage, storageMethods.sessionStorage].includes(
+          STORAGE_METHOD
+        )
+      ) {
+        const storage =
+          STORAGE_METHOD === storageMethods.localStorage
+            ? localStorage
+            : sessionStorage
+        const serializedItem = storage.getItem(STORAGE_KEY)
+
+        if (!serializedItem) {
+          return null
+        }
+
+        let item = null;
+
+        try {
+          item = JSON.parse(serializedItem)
+        } catch (error) {
+          return null
+        }
+
+        if (typeof item !== 'object' || item === null) {
+          return null
+        }
+
+        const now = new Date()
+
+        if (now.getTime() > item.expiry) {
+          storage.removeItem(STORAGE_KEY)
+          return null
+        }
+
+        return item.value
+      }
+
+      return _getSessionIdFromCookie()
+    }
+    ```
+  </Tab>
+  
+  <Tab title="Set Session ID">
+    ```javascript
+    function _setSessionId() {
+      const sessionId = _getSessionId() || _uuidv4()
+      
+      if (
+        [storageMethods.localStorage, storageMethods.sessionStorage].includes(
+          STORAGE_METHOD
+        )
+      ) {
+        const now = new Date()
+        const item = {
+          value: sessionId,
+          expiry: now.getTime() + 1800 * 1000, // 30 minutes
+        }
+        const value = JSON.stringify(item)
+        const storage =
+          STORAGE_METHOD === storageMethods.localStorage
+            ? localStorage
+            : sessionStorage
+        return storage.setItem(STORAGE_KEY, value)
+      }
+
+      return _setSessionIdFromCookie(sessionId)
+    }
+    ```
+  </Tab>
+  
+  <Tab title="Cookie Storage">
+    ```javascript
+    function _setSessionIdFromCookie(sessionId) {
+      let cookieValue = `${STORAGE_KEY}=${sessionId}; Max-Age=1800; path=/; secure`
+
+      if (domain) {
+        cookieValue += `; domain=${domain}`
+      }
+
+      document.cookie = cookieValue
+    }
+    ```
+    
+    Cookie settings:
+    - **Max-Age:** 1800 seconds (30 minutes)
+    - **Path:** `/` (available site-wide)
+    - **Secure:** `true` (HTTPS only)
+    - **Domain:** Uses `data-domain` if specified
+  </Tab>
+</Tabs>
+
+## Global Attributes
+
+Add custom attributes that are included in every event.
+
+### Syntax
+
+Use the `data-tb-*` prefix on the script tag:
+
+```html
+<script
+  src="https://unpkg.com/@tinybirdco/flock.js"
+  data-token="YOUR_TOKEN"
+  data-tb-app-version="2.1.0"
+  data-tb-environment="production"
+  data-tb-user-segment="premium"
+  data-tb-feature-flags="new-checkout,dark-mode"
+></script>
+```
+
+### Result
+
+These attributes are merged into every event payload:
+
+```json
+{
+  "action": "page_hit",
+  "payload": {
+    "user-agent": "Mozilla/5.0...",
+    "pathname": "/products",
+    "app_version": "2.1.0",
+    "environment": "production",
+    "user_segment": "premium",
+    "feature_flags": "new-checkout,dark-mode"
+  }
+}
+```
+
+<Note>
+  Hyphens in attribute names are automatically converted to underscores.
+</Note>
+
+### Implementation
+
+From the source code (`middleware/src/index.js:33-40`):
+
+```javascript
+let globalAttributes = {}
+
+for (const attr of document.currentScript.attributes) {
+  if (attr.name.startsWith('tb_')) {
+    globalAttributes[attr.name.slice(3).replace(/-/g, '_')] = attr.value
+  }
+  if (attr.name.startsWith('data-tb-')) {
+    globalAttributes[attr.name.slice(8).replace(/-/g, '_')] = attr.value
+  }
+}
+```
+
+### Use Cases
+
+<AccordionGroup>
+  <Accordion title="A/B Testing">
+    Track which variant users are seeing:
+    
+    ```html
+    <script
+      src="https://unpkg.com/@tinybirdco/flock.js"
+      data-token="YOUR_TOKEN"
+      data-tb-ab-test="checkout-v2"
+      data-tb-variant="treatment"
+    ></script>
+    ```
+  </Accordion>
+  
+  <Accordion title="Environment Tracking">
+    Distinguish between environments:
+    
+    ```html
+    <script
+      src="https://unpkg.com/@tinybirdco/flock.js"
+      data-token="YOUR_TOKEN"
+      data-tb-environment="staging"
+      data-tb-build="build-1234"
+    ></script>
+    ```
+  </Accordion>
+  
+  <Accordion title="User Segmentation">
+    Track user segments or plans:
+    
+    ```html
+    <script
+      src="https://unpkg.com/@tinybirdco/flock.js"
+      data-token="YOUR_TOKEN"
+      data-tb-plan="enterprise"
+      data-tb-account-type="business"
+    ></script>
+    ```
+  </Accordion>
+  
+  <Accordion title="Feature Flags">
+    Track enabled features:
+    
+    ```html
+    <script
+      src="https://unpkg.com/@tinybirdco/flock.js"
+      data-token="YOUR_TOKEN"
+      data-tb-features="dark-mode,new-nav,ai-chat"
+    ></script>
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Multi-Tenancy
+
+Support multiple tenants or domains in a single data source.
+
+### Configuration
+
+```html
+<script
+  src="https://unpkg.com/@tinybirdco/flock.js"
+  data-token="YOUR_TOKEN"
+  data-domain="acme.com"
+  data-tenant-id="tenant-123"
+></script>
+```
+
+### Data Structure
+
+Tenant and domain are included at the top level:
+
+```json
+{
+  "timestamp": "2024-03-11T14:23:45.123Z",
+  "action": "page_hit",
+  "tenant_id": "tenant-123",
+  "domain": "acme.com",
+  "payload": { ... }
+}
+```
+
+### JWT Token Filtering
+
+Filter endpoints by tenant using JWT tokens with fixed params:
+
+```json
+{
+  "exp": 1735689600,
+  "iat": 1704067200,
+  "token": "dashboard_token",
+  "fixed_params": {
+    "tenant_id": "tenant-123"
+  }
+}
+```
+
+Learn more: [JWT Tokens in Tinybird](https://www.tinybird.co/docs/forward/administration/tokens/jwt)
+
+### Use Cases
+
+<Tabs>
+  <Tab title="SaaS Multi-Tenancy">
+    Track analytics for multiple customers:
+    
+    ```javascript
+    // Dynamically set tenant ID
+    const tenantId = getCurrentTenantId();
+    
+    const script = document.createElement('script');
+    script.src = 'https://unpkg.com/@tinybirdco/flock.js';
+    script.setAttribute('data-token', 'YOUR_TOKEN');
+    script.setAttribute('data-tenant-id', tenantId);
+    document.head.appendChild(script);
+    ```
+  </Tab>
+  
+  <Tab title="Multi-Domain">
+    Track multiple websites in one data source:
+    
+    ```html
+    <!-- site1.com -->
+    <script
+      src="https://unpkg.com/@tinybirdco/flock.js"
+      data-token="YOUR_TOKEN"
+      data-domain="site1.com"
+    ></script>
+    
+    <!-- site2.com -->
+    <script
+      src="https://unpkg.com/@tinybirdco/flock.js"
+      data-token="YOUR_TOKEN"
+      data-domain="site2.com"
+    ></script>
+    ```
+  </Tab>
+  
+  <Tab title="White-Label">
+    Track analytics for white-label customers:
+    
+    ```html
+    <script
+      src="https://unpkg.com/@tinybirdco/flock.js"
+      data-token="YOUR_TOKEN"
+      data-tenant-id="customer-456"
+      data-domain="customer-branded-site.com"
+    ></script>
+    ```
+  </Tab>
+</Tabs>
+
+## Custom Data Source
+
+Override the default `analytics_events` data source:
+
+```html
+<script
+  src="https://unpkg.com/@tinybirdco/flock.js"
+  data-token="YOUR_TOKEN"
+  data-datasource="custom_analytics"
+></script>
+```
+
+<Info>
+  Useful when you've customized the landing data source or want to send events to multiple data sources.
+</Info>
+
+## Regional Endpoints
+
+Specify your Tinybird region:
+
+<CodeGroup>
+```html US East
+<script
+  src="https://unpkg.com/@tinybirdco/flock.js"
+  data-token="YOUR_TOKEN"
+  data-host="https://api.us-east.tinybird.co"
+></script>
+```
+
+```html EU (Default)
+<script
+  src="https://unpkg.com/@tinybirdco/flock.js"
+  data-token="YOUR_TOKEN"
+  data-host="https://api.tinybird.co"
+></script>
+```
+
+```html Custom Cluster
+<script
+  src="https://unpkg.com/@tinybirdco/flock.js"
+  data-token="YOUR_TOKEN"
+  data-host="https://api.custom-cluster.tinybird.co"
+></script>
+```
+</CodeGroup>
+
+## Payload Stringification
+
+Control whether payloads are stringified:
+
+```html
+<script
+  src="https://unpkg.com/@tinybirdco/flock.js"
+  data-token="YOUR_TOKEN"
+  data-stringify-payload="false"
+></script>
+```
+
+<Tabs>
+  <Tab title="Stringified (Default)">
+    ```json
+    {
+      "payload": "{\"pathname\":\"/home\",\"locale\":\"en-US\"}"
+    }
+    ```
+    
+    Payload is stored as a JSON string.
+  </Tab>
+  
+  <Tab title="Object">
+    ```json
+    {
+      "payload": {
+        "pathname": "/home",
+        "locale": "en-US"
+      }
+    }
+    ```
+    
+    Payload is stored as an object.
+  </Tab>
+</Tabs>
+
+<Warning>
+  Ensure your data source schema matches your chosen format.
+</Warning>
+
+## Complete Configuration Example
+
+Here's a full example using many configuration options:
+
+```html
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>Enterprise Analytics</title>
+    
+    <!-- Tinybird Analytics - Full Configuration -->
+    <script
+      defer
+      src="https://unpkg.com/@tinybirdco/flock.js"
+      data-token="p.eyJ1IjogImFiY2QxMjM0In0..."
+      data-host="https://api.us-east.tinybird.co"
+      data-proxy="https://analytics.mycompany.com"
+      data-datasource="company_analytics"
+      data-domain="mycompany.com"
+      data-tenant-id="tenant-enterprise-001"
+      data-storage="localStorage"
+      web-vitals="true"
+      data-tb-app-version="3.2.1"
+      data-tb-environment="production"
+      data-tb-plan="enterprise"
+      data-tb-region="us-east"
+      data-tb-ab-test="new-dashboard"
+      data-tb-variant="treatment"
+    ></script>
+  </head>
+  <body>
+    <h1>My Application</h1>
+  </body>
+</html>
+```
+
+## Security Considerations
+
+<AccordionGroup>
+  <Accordion title="Token Security">
+    - Use **tracker** tokens, not admin tokens
+    - Tracker tokens should only have write access to the data source
+    - Rotate tokens periodically
+    - Consider using proxy to hide tokens from client
+  </Accordion>
+  
+  <Accordion title="CORS Configuration">
+    When using a proxy, configure CORS properly:
+    
+    ```javascript
+    return new Response('ok', {
+      headers: {
+        'access-control-allow-origin': 'https://yourdomain.com',
+        'access-control-allow-methods': 'POST',
+        'access-control-allow-headers': 'Content-Type',
+      },
+    });
+    ```
+  </Accordion>
+  
+  <Accordion title="PII Protection">
+    - Never track passwords or credit card numbers
+    - Automatic PII masking is a safeguard, not a replacement for proper data handling
+    - Review tracked data regularly
+    - Implement data retention policies
+  </Accordion>
+</AccordionGroup>
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Events Not Arriving">
+    **Check:**
+    1. Browser console for errors
+    2. Network tab for failed requests
+    3. Token permissions
+    4. CORS configuration (if using proxy)
+    5. Data source name spelling
+  </Accordion>
+  
+  <Accordion title="Proxy Not Working">
+    **Check:**
+    1. Proxy endpoint is accessible
+    2. CORS headers are set correctly
+    3. Environment variables are set
+    4. Request is being forwarded to Tinybird
+    5. Response status codes
+  </Accordion>
+  
+  <Accordion title="Session Not Persisting">
+    **Check:**
+    1. Storage method is supported in browser
+    2. Cookies are not being blocked
+    3. localStorage is not full
+    4. Domain is set correctly (for cookies)
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Page Views" icon="eye" href="/tracking/page-views">
+    Learn about automatic page tracking
+  </Card>
+  <Card title="Custom Events" icon="bolt" href="/tracking/custom-events">
+    Track custom user interactions
+  </Card>
+</CardGroup>

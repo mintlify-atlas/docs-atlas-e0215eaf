@@ -1,0 +1,652 @@
+---
+title: Customization
+description: Customize the Tinybird Web Analytics Dashboard to match your brand and requirements
+---
+
+The dashboard is designed to be highly customizable. You can modify the UI, add new widgets, adjust styling, and extend functionality to meet your specific needs.
+
+<Note>
+  We encourage you to [fork](https://docs.github.com/en/get-started/quickstart/fork-a-repo) the repository and customize the dashboard to your branding and requirements.
+</Note>
+
+## Styling & Theming
+
+The dashboard uses Tailwind CSS with custom theme configuration and CSS variables for consistent styling.
+
+### Theme Configuration
+
+Customize colors, typography, and spacing in `tailwind.config.js`:
+
+<CodeGroup>
+```javascript tailwind.config.js
+const { fontFamily } = require('tailwindcss/defaultTheme')
+const { colors, typography } = require('./styles/theme')
+
+/** @type {import('tailwindcss').Config} */
+module.exports = {
+  content: [
+    './app/**/*.{js,ts,jsx,tsx}',
+    './components/**/*.{js,ts,jsx,tsx}',
+  ],
+  theme: {
+    fontFamily: {
+      sans: [typography.fontFamily, ...fontFamily.sans],
+    },
+    extend: {
+      colors,
+      textColor: {
+        base: '#25283D',
+      },
+      fontSize: {
+        md: '1rem',
+      },
+    },
+  },
+  plugins: [],
+}
+```
+</CodeGroup>
+
+### CSS Variables
+
+The dashboard uses CSS variables for theming. Customize them in `styles/globals.css`:
+
+<CodeGroup>
+```css styles/globals.css (example)
+:root {
+  /* Colors */
+  --primary-color: #2D27F7;
+  --alternative-color: #8B5CF6;
+  --background-01-color: #FFFFFF;
+  --text-blue-color: #2D27F7;
+  --border-01-color: #E5E7EB;
+  
+  /* Typography */
+  --font-family-sans: 'Inter', system-ui, sans-serif;
+  --font-family-iawriter: 'iA Writer Mono', monospace;
+}
+
+/* Dark mode support */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background-01-color: #1F2937;
+    --text-color: #F9FAFB;
+    --border-01-color: #374151;
+  }
+}
+```
+</CodeGroup>
+
+<Tip>
+  Modify these CSS variables to instantly change the look and feel of the entire dashboard without touching component code.
+</Tip>
+
+### Custom Fonts
+
+The dashboard uses Inter for sans-serif text and iA Writer Mono for monospace text.
+
+To change fonts, update `app/layout.tsx`:
+
+<CodeGroup>
+```typescript app/layout.tsx (excerpt)
+import { Inter } from 'next/font/google'
+import localFont from 'next/font/local'
+
+const sans = Inter({
+  variable: '--font-family-sans',
+  subsets: ['latin'],
+  fallback: ['system-ui'],
+})
+
+const mono = localFont({
+  variable: '--font-family-iawriter',
+  src: '../assets/fonts/iawritermonos-regular.woff2',
+  display: 'swap',
+})
+
+export default function RootLayout({
+  children,
+}: {
+  children: React.ReactNode
+}) {
+  return (
+    <html lang="en" className={`${sans.variable} ${mono.variable}`}>
+      <body>{children}</body>
+    </html>
+  )
+}
+```
+</CodeGroup>
+
+## Customizing Widgets
+
+The dashboard includes several pre-built widgets that you can customize or extend.
+
+### Available Widgets
+
+Widgets are located in `app/widgets/`:
+
+- `visitors.tsx` - Real-time and historical visitor counts
+- `pageviews.tsx` - Page view trends
+- `top-pages.tsx` - Most visited pages
+- `top-locations.tsx` - Geographic distribution
+- `top-sources.tsx` - Traffic sources and referrers
+- `top-devices.tsx` - Device type breakdown
+- `top-browsers.tsx` - Browser statistics
+
+### Modifying Widget Layout
+
+Edit `app/widgets.tsx` to change the widget grid:
+
+<CodeGroup>
+```typescript app/widgets.tsx
+export const Widgets = () => {
+  return (
+    <div className="grid grid-cols-2 gap-4">
+      <Visitors />
+      <Pageviews />
+      <TopPages />
+      <TopLocations />
+      <TopSources />
+      <TopDevices />
+      <TopBrowsers />
+    </div>
+  )
+}
+```
+</CodeGroup>
+
+<Tip>
+  Change `grid-cols-2` to `grid-cols-3` for a three-column layout, or use responsive classes like `grid-cols-1 md:grid-cols-2 lg:grid-cols-3`.
+</Tip>
+
+### Creating Custom Widgets
+
+Create a new widget file in `app/widgets/`:
+
+<CodeGroup>
+```typescript app/widgets/custom-metric.tsx
+import { Card } from '@/components/ui/Card'
+import { SqlChart } from '@/components/ui/SqlChart'
+import { useEndpoint } from '@/lib/hooks/use-endpoint'
+
+type CustomMetric = {
+  date: string
+  value: number
+}
+
+export const CustomMetric = () => {
+  const { data, error, isLoading } = useEndpoint<CustomMetric[]>(
+    'your_custom_pipe'
+  )
+
+  return (
+    <Card>
+      <SqlChart
+        title="Custom Metric"
+        data={data}
+        error={error?.message}
+        isLoading={isLoading}
+        xAxisKey="date"
+        yAxisKey="value"
+        color="#2D27F7"
+      />
+    </Card>
+  )
+}
+```
+</CodeGroup>
+
+Then add it to the widgets grid:
+
+<CodeGroup>
+```typescript app/widgets.tsx
+import { CustomMetric } from './widgets/custom-metric'
+
+export const Widgets = () => {
+  return (
+    <div className="grid grid-cols-2 gap-4">
+      <Visitors />
+      <Pageviews />
+      <CustomMetric /> {/* Your new widget */}
+      <TopPages />
+      {/* ... other widgets */}
+    </div>
+  )
+}
+```
+</CodeGroup>
+
+## Adding New Pipes
+
+To display data from a new Tinybird pipe:
+
+<Steps>
+  <Step title="Create Pipe in Tinybird">
+    Create and publish your pipe in the Tinybird Console or CLI.
+  </Step>
+  
+  <Step title="Add to JWT Scopes">
+    Add the pipe name to the `resources` array in `components/AuthDialog.tsx`:
+    
+    ```typescript
+    const resources = [
+      'domains',
+      'top_sources',
+      // ... other pipes
+      'your_new_pipe', // Add here
+    ]
+    ```
+  </Step>
+  
+  <Step title="Create Widget Component">
+    Use the `useEndpoint` hook to fetch data from your pipe:
+    
+    ```typescript
+    const { data, error, isLoading } = useEndpoint<YourDataType[]>(
+      'your_new_pipe'
+    )
+    ```
+  </Step>
+  
+  <Step title="Display Data">
+    Use the `SqlChart`, `PipeTable`, or custom components to visualize the data.
+  </Step>
+</Steps>
+
+## Customizing the Header
+
+Modify the header in `components/Header.tsx`:
+
+<CodeGroup>
+```typescript components/Header.tsx (excerpt)
+export const Header = ({ onAskAiClick, onLogout }: HeaderProps) => {
+  return (
+    <nav className="h-16 sticky top-0 z-20 py-2.5 px-5 bg-[var(--background-01-color)] border-b border-[var(--border-01-color)]">
+      <a
+        href="https://tinybird.co"
+        target="_blank"
+        rel="noopener noreferrer"
+        className="inline-flex items-center gap-2.5"
+      >
+        <div className="aspect-square w-6 h-6 bg-[var(--primary-color)] rounded flex items-center justify-center">
+          <img src="/icon.svg" alt="" width={16} height={16} />
+        </div>
+        <Text variant="button" color="default">
+          Your Company Name
+        </Text>
+      </a>
+      {/* ... rest of header */}
+    </nav>
+  )
+}
+```
+</CodeGroup>
+
+### Custom Logo
+
+Replace the logo by updating the image source:
+
+1. Add your logo to `public/your-logo.svg`
+2. Update the `<img>` tag in `Header.tsx`:
+
+```typescript
+<img src="/your-logo.svg" alt="Your Company" width={32} height={32} />
+```
+
+## Customizing Time Ranges
+
+Modify available time ranges in `lib/hooks/use-time-range.ts`:
+
+<CodeGroup>
+```typescript lib/hooks/use-time-range.ts (example)
+export function useTimeRange() {
+  const options = [
+    { value: 'today', label: 'Today' },
+    { value: 'yesterday', label: 'Yesterday' },
+    { value: '7d', label: 'Last 7 days' },
+    { value: '30d', label: 'Last 30 days' },
+    { value: '90d', label: 'Last 3 months' },
+    { value: '12m', label: 'Last 12 months' },
+    // Add custom ranges here
+  ]
+  
+  const [value, setValue] = useState(options[2].value) // Default to 7 days
+  
+  return { value, setValue, options }
+}
+```
+</CodeGroup>
+
+## AI Chat Customization
+
+The AI chat feature can be customized or embedded in other applications.
+
+### Configure AI Endpoint
+
+Set the AI endpoint in your environment variables:
+
+<CodeGroup>
+```bash .env
+NEXT_PUBLIC_ASK_TINYBIRD_ENDPOINT=https://your-custom-ai-endpoint.com/api/chat
+```
+</CodeGroup>
+
+### Embedding AI Chat
+
+The AI chat components are modular and can be embedded anywhere:
+
+<CodeGroup>
+```typescript CustomPage.tsx
+import { AIChatStandalone } from '@/components/ai-chat'
+
+function CustomPage() {
+  return (
+    <div>
+      <h1>Custom Analytics Page</h1>
+      <AIChatStandalone 
+        placeholder="Ask about your data..."
+        className="max-w-4xl mx-auto p-6"
+        maxSteps={30}
+      />
+    </div>
+  )
+}
+```
+</CodeGroup>
+
+See `components/ai-chat/README.md` for detailed documentation on embedding options.
+
+## Dashboard Tabs
+
+Customize or add tabs in `app/DashboardTabs.tsx`:
+
+<CodeGroup>
+```typescript app/DashboardTabs.tsx
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/Tabs'
+import { Widgets, CoreVitals } from './widgets'
+
+const DashboardTabs = () => {
+  return (
+    <Tabs defaultValue="analytics">
+      <TabsList className="mb-4">
+        <TabsTrigger value="analytics">Analytics</TabsTrigger>
+        <TabsTrigger value="speed">Speed Insights</TabsTrigger>
+        <TabsTrigger value="custom">Custom Tab</TabsTrigger>
+      </TabsList>
+      
+      <TabsContent value="analytics">
+        <Widgets />
+      </TabsContent>
+      
+      <TabsContent value="speed">
+        <CoreVitals />
+      </TabsContent>
+      
+      <TabsContent value="custom">
+        {/* Your custom content */}
+      </TabsContent>
+    </Tabs>
+  )
+}
+```
+</CodeGroup>
+
+## Multi-Domain Support
+
+The dashboard includes domain filtering. Customize the domain selector in `components/ui/DomainSelect.tsx` or modify the filtering logic in your Tinybird pipes.
+
+## Environment-Specific Configuration
+
+Use different configurations for development and production:
+
+<CodeGroup>
+```typescript lib/config.ts
+const config = {
+  dashboardURL: process.env.NEXT_PUBLIC_TINYBIRD_DASHBOARD_URL as string,
+  trackerToken: process.env.NEXT_PUBLIC_TINYBIRD_TRACKER_TOKEN as string,
+  tenantId: process.env.TENANT_ID as string,
+  isDevelopment: process.env.NODE_ENV === 'development',
+  isProduction: process.env.NODE_ENV === 'production',
+} as const
+
+export default config
+```
+</CodeGroup>
+
+Then use conditionally in your components:
+
+```typescript
+import config from '@/lib/config'
+
+if (config.isDevelopment) {
+  // Development-specific code
+}
+```
+
+## UI Component Customization
+
+The dashboard uses custom UI components in `components/ui/`. You can modify these to change the look and behavior:
+
+- `Button.tsx` - Button styles and variants
+- `Card.tsx` - Card container styling
+- `Chart.tsx` / `SqlChart.tsx` - Chart configurations
+- `Dialog.tsx` - Modal dialogs
+- `Input.tsx` - Form inputs
+- `Table.tsx` / `PipeTable.tsx` - Data tables
+- `Tabs.tsx` - Tab navigation
+- `Text.tsx` - Typography components
+
+### Example: Custom Button Styles
+
+<CodeGroup>
+```typescript components/ui/Button.tsx
+import styles from './Button.module.css'
+
+export const Button = ({ variant = 'solid', size = 'medium', ...props }) => {
+  return (
+    <button
+      className={`${styles.button} ${styles[variant]} ${styles[size]}`}
+      {...props}
+    />
+  )
+}
+```
+</CodeGroup>
+
+<CodeGroup>
+```css components/ui/Button.module.css
+.button {
+  border-radius: 8px;
+  font-weight: 600;
+  transition: all 0.2s;
+}
+
+.solid {
+  background: var(--primary-color);
+  color: white;
+}
+
+.solid:hover {
+  opacity: 0.9;
+}
+
+.medium {
+  padding: 8px 16px;
+  font-size: 14px;
+}
+
+.large {
+  padding: 12px 24px;
+  font-size: 16px;
+}
+```
+</CodeGroup>
+
+## Performance Optimization
+
+### Caching with SWR
+
+Customize data fetching behavior in `lib/hooks/use-endpoint.ts`:
+
+<CodeGroup>
+```typescript lib/hooks/use-endpoint.ts (example)
+import useSWR from 'swr'
+
+export function useEndpoint<T>(endpoint: string) {
+  return useSWR<T>(
+    `/api/endpoints/${endpoint}`,
+    fetcher,
+    {
+      refreshInterval: 30000, // Refresh every 30 seconds
+      revalidateOnFocus: false,
+      dedupingInterval: 5000,
+    }
+  )
+}
+```
+</CodeGroup>
+
+### Lazy Loading
+
+Improve initial load time by lazy loading widgets:
+
+<CodeGroup>
+```typescript app/widgets.tsx
+import { lazy, Suspense } from 'react'
+import { Loader } from '@/components/ui/Loader'
+
+const Visitors = lazy(() => import('./widgets/visitors'))
+const Pageviews = lazy(() => import('./widgets/pageviews'))
+
+export const Widgets = () => {
+  return (
+    <Suspense fallback={<Loader />}>
+      <div className="grid grid-cols-2 gap-4">
+        <Visitors />
+        <Pageviews />
+        {/* ... other widgets */}
+      </div>
+    </Suspense>
+  )
+}
+```
+</CodeGroup>
+
+## Advanced Customization
+
+### Custom Middleware
+
+Extend the authentication middleware in `middleware.ts` to add custom logic:
+
+```typescript
+// Add IP allowlisting
+const allowedIPs = ['192.168.1.1', '10.0.0.1']
+const clientIP = request.ip || request.headers.get('x-forwarded-for')
+
+if (allowedIPs.includes(clientIP)) {
+  return NextResponse.next()
+}
+```
+
+### Custom API Routes
+
+Add new API endpoints in `app/api/`:
+
+<CodeGroup>
+```typescript app/api/custom/route.ts
+import { NextRequest, NextResponse } from 'next/server'
+import { getTinybirdClient } from '@/lib/server'
+
+export async function GET(request: NextRequest) {
+  const client = getTinybirdClient()
+  const data = await client.query('your_pipe')
+  
+  return NextResponse.json(data)
+}
+```
+</CodeGroup>
+
+## Building for Your Brand
+
+<Steps>
+  <Step title="Update Branding">
+    Replace logos, colors, and typography to match your brand identity
+  </Step>
+  
+  <Step title="Customize Widgets">
+    Add, remove, or modify widgets to show metrics relevant to your business
+  </Step>
+  
+  <Step title="Configure Authentication">
+    Set up authentication that integrates with your existing identity provider
+  </Step>
+  
+  <Step title="Add Custom Features">
+    Extend the dashboard with features specific to your use case
+  </Step>
+  
+  <Step title="Deploy and Share">
+    Deploy your customized dashboard and share it with your team
+  </Step>
+</Steps>
+
+## Example Customizations
+
+<AccordionGroup>
+  <Accordion title="E-commerce Dashboard">
+    - Add revenue and conversion widgets
+    - Track product views and purchases
+    - Show shopping cart abandonment rates
+    - Display customer lifetime value
+  </Accordion>
+  
+  <Accordion title="SaaS Dashboard">
+    - Track user signups and activations
+    - Monitor feature usage
+    - Show subscription metrics
+    - Display churn and retention rates
+  </Accordion>
+  
+  <Accordion title="Content Dashboard">
+    - Track article engagement
+    - Monitor reading time and scroll depth
+    - Show popular content categories
+    - Display social sharing metrics
+  </Accordion>
+  
+  <Accordion title="Marketing Dashboard">
+    - Track campaign performance
+    - Monitor ad spend and ROI
+    - Show conversion funnels
+    - Display attribution metrics
+  </Accordion>
+</AccordionGroup>
+
+## Resources
+
+<CardGroup cols={2}>
+  <Card title="Next.js Documentation" icon="book" href="https://nextjs.org/docs">
+    Learn more about Next.js features and best practices
+  </Card>
+  <Card title="Tailwind CSS" icon="palette" href="https://tailwindcss.com/docs">
+    Explore Tailwind utility classes and customization
+  </Card>
+  <Card title="Tinybird SDK" icon="code" href="https://www.tinybird.co/docs/api-reference/overview">
+    API reference for the Tinybird JavaScript SDK
+  </Card>
+  <Card title="Fork on GitHub" icon="github" href="https://github.com/tinybirdco/web-analytics-starter-kit">
+    Fork the repository and start customizing
+  </Card>
+</CardGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Deploy Your Dashboard" icon="rocket" href="/dashboard/deployment">
+    Deploy your customized dashboard to production
+  </Card>
+  <Card title="Configure Tinybird" icon="database" href="/data-platform/architecture">
+    Learn how to create custom pipes and optimize queries
+  </Card>
+</CardGroup>

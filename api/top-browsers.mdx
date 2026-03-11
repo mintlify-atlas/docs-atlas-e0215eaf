@@ -1,0 +1,207 @@
+---
+title: 'Top Browsers'
+description: 'Get top browsers ranked by visits with optional previous period comparison'
+---
+
+## Overview
+
+The `top_browsers` endpoint returns the most used browsers ranked by number of visits. It supports pagination and optional comparison with the previous period.
+
+## Endpoint
+
+```
+GET https://api.tinybird.co/v0/pipes/top_browsers.json
+```
+
+## Parameters
+
+<ParamField query="date_from" type="string" optional>
+  Start date (YYYY-MM-DD format). Defaults to 7 days ago.
+</ParamField>
+
+<ParamField query="date_to" type="string" optional>
+  End date (YYYY-MM-DD format). Defaults to today.
+</ParamField>
+
+<ParamField query="tenant_id" type="string" optional>
+  Filter by tenant ID
+</ParamField>
+
+<ParamField query="domain" type="string" optional>
+  Filter by domain
+</ParamField>
+
+<ParamField query="include_previous_period" type="string" optional>
+  Set to "true" to include previous period comparison and growth percentages
+</ParamField>
+
+<ParamField query="skip" type="int32" optional default="0">
+  Skip for pagination (offset)
+</ParamField>
+
+<ParamField query="limit" type="int32" optional default="50">
+  Limit for pagination (max results)
+</ParamField>
+
+## SQL Query
+
+The endpoint aggregates browser data from `analytics_sessions_mv`:
+
+```sql
+SELECT
+    browser,
+    uniq(session_id) as current_visits,
+    countMerge(hits) as current_hits
+FROM analytics_sessions_mv
+WHERE date >= (SELECT current_start FROM date_calculations)
+    AND date <= (SELECT current_end FROM date_calculations)
+    {% if defined(tenant_id) %}
+    AND tenant_id = {{ String(tenant_id, description="Filter by tenant ID") }}
+    {% end %}
+    {% if defined(domain) %}
+    AND domain = {{ String(domain, description="Filter by domain") }}
+    {% end %}
+GROUP BY browser
+```
+
+## Response
+
+<ResponseField name="browser" type="string" required>
+  The browser name (e.g., "Chrome", "Firefox", "Safari")
+</ResponseField>
+
+<ResponseField name="visits" type="uint64" required>
+  Number of unique visits from this browser
+</ResponseField>
+
+<ResponseField name="hits" type="uint64" required>
+  Total number of pageviews from this browser
+</ResponseField>
+
+<ResponseField name="previous_visits" type="uint64">
+  Previous period visits (only when include_previous_period=true)
+</ResponseField>
+
+<ResponseField name="previous_hits" type="uint64">
+  Previous period pageviews (only when include_previous_period=true)
+</ResponseField>
+
+<ResponseField name="visits_growth_percentage" type="float64">
+  Percentage change in visits (only when include_previous_period=true)
+</ResponseField>
+
+<ResponseField name="hits_growth_percentage" type="float64">
+  Percentage change in pageviews (only when include_previous_period=true)
+</ResponseField>
+
+## TypeScript Usage
+
+```typescript
+import { Tinybird } from '@tinybirdco/sdk';
+import type { TopBrowsersParams, TopBrowsersOutput } from './endpoints';
+
+const tb = new Tinybird({ token: process.env.TINYBIRD_TOKEN });
+
+// Get top 50 browsers (default)
+const result = await tb.exec<TopBrowsersOutput>('top_browsers');
+result.data.forEach(browser => {
+  console.log(`${browser.browser}: ${browser.visits} visits, ${browser.hits} pageviews`);
+});
+
+// Get top browsers for a specific date range
+const params: TopBrowsersParams = {
+  date_from: '2024-01-01',
+  date_to: '2024-01-31',
+  domain: 'example.com',
+  limit: 10
+};
+const rangeResult = await tb.exec<TopBrowsersOutput>('top_browsers', params);
+
+// Get top browsers with previous period comparison
+const comparisonParams: TopBrowsersParams = {
+  date_from: '2024-01-01',
+  date_to: '2024-01-07',
+  include_previous_period: 'true',
+  limit: 20
+};
+const comparisonResult = await tb.exec<TopBrowsersOutput>('top_browsers', comparisonParams);
+comparisonResult.data.forEach(browser => {
+  console.log(`${browser.browser}: ${browser.visits} visits (${browser.visits_growth_percentage}% growth)`);
+});
+
+// Paginate through results
+const page1Params: TopBrowsersParams = {
+  skip: 0,
+  limit: 10
+};
+const page2Params: TopBrowsersParams = {
+  skip: 10,
+  limit: 10
+};
+const page1 = await tb.exec<TopBrowsersOutput>('top_browsers', page1Params);
+const page2 = await tb.exec<TopBrowsersOutput>('top_browsers', page2Params);
+```
+
+## Example Response
+
+### Without Previous Period
+
+```json
+{
+  "data": [
+    {
+      "browser": "Chrome",
+      "visits": 12456,
+      "hits": 28934
+    },
+    {
+      "browser": "Safari",
+      "visits": 5234,
+      "hits": 11234
+    },
+    {
+      "browser": "Firefox",
+      "visits": 3421,
+      "hits": 7865
+    },
+    {
+      "browser": "Edge",
+      "visits": 1876,
+      "hits": 4321
+    }
+  ]
+}
+```
+
+### With Previous Period
+
+```json
+{
+  "data": [
+    {
+      "browser": "Chrome",
+      "visits": 12456,
+      "hits": 28934,
+      "previous_visits": 11234,
+      "previous_hits": 26543,
+      "visits_growth_percentage": 10.88,
+      "hits_growth_percentage": 9.01
+    },
+    {
+      "browser": "Safari",
+      "visits": 5234,
+      "hits": 11234,
+      "previous_visits": 4876,
+      "previous_hits": 10543,
+      "visits_growth_percentage": 7.34,
+      "hits_growth_percentage": 6.55
+    }
+  ]
+}
+```
+
+## Notes
+
+- Browser names are detected from User-Agent strings
+- Results are ordered by visits in descending order
+- Use pagination parameters for large result sets

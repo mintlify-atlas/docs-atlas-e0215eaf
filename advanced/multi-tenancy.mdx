@@ -1,0 +1,330 @@
+---
+title: Multi-Tenancy Support
+description: Configure web analytics for multiple tenants and domains in a single Tinybird workspace
+---
+
+## Overview
+
+The Tinybird Web Analytics Starter Kit includes built-in support for multi-tenancy, allowing you to track analytics across multiple tenants and domains within a single Tinybird workspace. This is ideal for SaaS applications, white-label solutions, or managing analytics for multiple clients.
+
+## How It Works
+
+The `analytics_events` datasource includes `tenant_id` and `domain` fields that are automatically indexed and partitioned for efficient querying:
+
+```typescript
+export const analyticsEvents = defineDatasource("analytics_events", {
+  schema: {
+    timestamp: t.dateTime(),
+    session_id: t.string().nullable(),
+    action: t.string().lowCardinality(),
+    version: t.string().lowCardinality(),
+    payload: t.string(),
+    tenant_id: t.string().default(""),
+    domain: t.string().default(""),
+  },
+  engine: engine.mergeTree({
+    partitionKey: "toYYYYMM(timestamp)",
+    sortingKey: ["tenant_id", "domain", "timestamp"],
+  }),
+});
+```
+
+## Configuration
+
+### Tracking Script Setup
+
+Add `data-tenant-id` and `data-domain` attributes to your tracking script:
+
+```html
+<script
+  defer
+  src="https://unpkg.com/@tinybirdco/flock.js"
+  data-token="YOUR_TRACKER_TOKEN"
+  data-tenant-id="customer-123"
+  data-domain="app.customer.com"
+></script>
+```
+
+<ParamField path="data-tenant-id" type="string">
+  Unique identifier for the tenant. Used to isolate analytics data by customer or organization.
+</ParamField>
+
+<ParamField path="data-domain" type="string">
+  Domain name for the tracked site. Useful for tracking multiple domains per tenant.
+</ParamField>
+
+### Dynamic Configuration
+
+For applications where tenant information is determined at runtime:
+
+```javascript
+// Set attributes dynamically
+const script = document.createElement('script');
+script.src = 'https://unpkg.com/@tinybirdco/flock.js';
+script.setAttribute('data-token', 'YOUR_TRACKER_TOKEN');
+script.setAttribute('data-tenant-id', currentUser.tenantId);
+script.setAttribute('data-domain', window.location.hostname);
+document.head.appendChild(script);
+```
+
+## Querying Multi-Tenant Data
+
+### Filtering by Tenant
+
+All endpoints support `tenant_id` and `domain` parameters for filtering:
+
+```typescript
+const result = await tinybird.query.kpis({
+  date_from: '2024-01-01',
+  date_to: '2024-01-31',
+  tenant_id: 'customer-123',
+  domain: 'app.customer.com'
+});
+```
+
+### Available Endpoints with Multi-Tenancy
+
+All core endpoints support tenant filtering:
+
+- `current_visitors` - Real-time visitor count per tenant
+- `kpis` - Key performance indicators filtered by tenant
+- `trend` - Traffic trends for specific tenant
+- `top_pages` - Most visited pages per tenant/domain
+- `top_sources` - Traffic sources by tenant
+- `top_browsers` - Browser breakdown per tenant
+- `top_devices` - Device distribution by tenant
+- `top_locations` - Geographic distribution per tenant
+
+### Tenant-Specific Queries
+
+Example endpoint definition with tenant filtering:
+
+```typescript
+export const currentVisitors = defineEndpoint("current_visitors", {
+  nodes: [
+    node({
+      sql: `
+        SELECT uniq(session_id) AS visits
+        FROM analytics_hits
+        WHERE timestamp >= (now() - interval 5 minute)
+            {% if defined(tenant_id) %}
+            AND tenant_id = {{ String(tenant_id, description="Filter by tenant ID") }}
+            {% end %}
+            {% if defined(domain) %}
+            AND domain = {{ String(domain, description="Filter by domain") }}
+            {% end %}
+      `,
+    }),
+  ],
+  params: {
+    tenant_id: p.string().optional().describe("Filter by tenant ID"),
+    domain: p.string().optional().describe("Filter by domain"),
+  },
+});
+```
+
+## Securing Multi-Tenant Access with JWT Tokens
+
+<Info>
+Use JWT tokens with `fixed_params` to ensure tenants can only access their own data.
+</Info>
+
+### Creating Tenant-Specific JWT Tokens
+
+Create JWT tokens that automatically filter results to a specific tenant:
+
+```json
+{
+  "fixed_params": {
+    "tenant_id": "customer-123"
+  }
+}
+```
+
+When using this token, all API requests will automatically be filtered to only return data for `customer-123`, regardless of what parameters the client sends.
+
+### JWT Token Configuration
+
+Example JWT payload for tenant isolation:
+
+```json
+{
+  "iss": "your-app",
+  "sub": "customer-123",
+  "exp": 1735689600,
+  "scopes": [
+    {
+      "type": "PIPES:READ",
+      "resource": "current_visitors",
+      "fixed_params": {
+        "tenant_id": "customer-123"
+      }
+    },
+    {
+      "type": "PIPES:READ",
+      "resource": "kpis",
+      "fixed_params": {
+        "tenant_id": "customer-123"
+      }
+    },
+    {
+      "type": "PIPES:READ",
+      "resource": "top_*",
+      "fixed_params": {
+        "tenant_id": "customer-123"
+      }
+    }
+  ]
+}
+```
+
+<Tip>
+Use wildcard patterns like `top_*` to apply fixed params to multiple endpoints at once.
+</Tip>
+
+### Implementing JWT Tokens
+
+1. **Generate the Token**: Use the [Tinybird JWT creation guide](https://www.tinybird.co/docs/forward/administration/tokens/jwt#create-a-jwt-in-production)
+
+2. **Use in API Requests**:
+
+```bash
+curl -H "Authorization: Bearer YOUR_JWT_TOKEN" \
+  https://api.tinybird.co/v0/pipes/kpis.json
+```
+
+3. **Client-Side Usage**:
+
+```typescript
+const tinybird = createAnalyticsClient({
+  token: 'YOUR_JWT_TOKEN', // Tenant-specific JWT
+});
+
+// This will automatically be filtered to the tenant in the JWT
+const kpis = await tinybird.query.kpis({
+  date_from: '2024-01-01',
+  date_to: '2024-01-31',
+});
+```
+
+## Materialized Views for Multi-Tenancy
+
+All materialized views are optimized for multi-tenant queries with proper sorting keys:
+
+```typescript
+// Pages materialized view
+export const analyticsPagesMv = defineDatasource("analytics_pages_mv", {
+  engine: engine.aggregatingMergeTree({
+    partitionKey: "toYYYYMM(date)",
+    sortingKey: [
+      "tenant_id",
+      "domain",
+      "date",
+      "device",
+      "browser",
+      "location",
+      "pathname",
+    ],
+  }),
+});
+```
+
+The sorting key starting with `tenant_id` ensures efficient queries when filtering by tenant.
+
+## Tenant Management Endpoints
+
+### List All Domains for a Tenant
+
+```typescript
+const domains = await tinybird.query.domains({
+  tenant_id: 'customer-123'
+});
+
+// Returns:
+// [
+//   {
+//     domain: "app.customer.com",
+//     first_seen: "2024-01-01T00:00:00Z",
+//     last_seen: "2024-01-31T23:59:59Z",
+//     total_hits: 15000
+//   }
+// ]
+```
+
+### List All Actions for a Tenant
+
+```typescript
+const actions = await tinybird.query.actions({
+  tenant_id: 'customer-123'
+});
+
+// Returns tracked events like page_hit, custom events, etc.
+```
+
+## Best Practices
+
+<Check>
+**Do**: Use JWT tokens with `fixed_params` for customer-facing applications to ensure data isolation.
+</Check>
+
+<Check>
+**Do**: Include both `tenant_id` and `domain` for maximum flexibility in multi-domain scenarios.
+</Check>
+
+<Check>
+**Do**: Use consistent tenant ID format across your application (e.g., UUID, slug, numeric ID).
+</Check>
+
+<Warning>
+**Don't**: Rely solely on client-side filtering. Always use JWT tokens with fixed params for security.
+</Warning>
+
+<Warning>
+**Don't**: Use special characters in tenant IDs or domains that could cause issues in SQL queries.
+</Warning>
+
+## Performance Considerations
+
+- **Partitioning**: Data is partitioned by month (`toYYYYMM(timestamp)`) for efficient querying
+- **Sorting**: The sorting key `["tenant_id", "domain", "timestamp"]` optimizes tenant-specific queries
+- **Materialized Views**: Pre-aggregated data by tenant reduces query time
+- **Indexes**: ClickHouse automatically creates sparse indexes on the sorting key
+
+## Example: SaaS Application
+
+Complete example for a multi-tenant SaaS application:
+
+```html
+<!-- In your application layout -->
+<!DOCTYPE html>
+<html>
+<head>
+  <script>
+    // Get tenant info from your backend
+    const tenantInfo = {{ tenant_info_json }};
+  </script>
+  <script
+    defer
+    src="https://unpkg.com/@tinybirdco/flock.js"
+    data-token="YOUR_TRACKER_TOKEN"
+  ></script>
+  <script>
+    // Set tenant after script loads
+    document.addEventListener('DOMContentLoaded', function() {
+      const script = document.querySelector('[data-token]');
+      script.setAttribute('data-tenant-id', tenantInfo.id);
+      script.setAttribute('data-domain', window.location.hostname);
+    });
+  </script>
+</head>
+<body>
+  <!-- Your application -->
+</body>
+</html>
+```
+
+## Related Resources
+
+- [JWT Token Creation](https://www.tinybird.co/docs/forward/administration/tokens/jwt)
+- [Data Platform Datasources](/data-platform/datasources)
+- [GDPR Compliance](/advanced/gdpr-compliance)

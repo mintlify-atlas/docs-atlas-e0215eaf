@@ -1,0 +1,233 @@
+---
+title: 'Installation'
+description: 'Learn how to install and set up the Tinybird web analytics tracker on your website'
+---
+
+## Quick Start
+
+The Tinybird web analytics tracker (@tinybirdco/flock.js) is a lightweight JavaScript library that tracks page views, custom events, and web vitals on your website.
+
+### Script Installation
+
+Add the following script tag within your site's `<head>` section:
+
+```html
+<script
+  defer
+  src="https://unpkg.com/@tinybirdco/flock.js"
+  data-token="YOUR_TRACKER_TOKEN"
+></script>
+```
+
+<Note>
+  Get your `tracker` token from [Tinybird Cloud](https://cloud.tinybird.co/tokens) under "Manage Auth Tokens".
+</Note>
+
+### Verification
+
+Once the script is installed, you should immediately start receiving `page_hit` events as visitors view and interact with your website. You can verify this in your Tinybird workspace by checking the `analytics_events` data source.
+
+## Configuration Parameters
+
+The tracker script supports several configuration parameters that can be added as data attributes to the script tag.
+
+### Required Parameters
+
+<ParamField path="data-token" type="string" required>
+  Your Tinybird tracker token. Find it in the Tinybird UI under "Manage Auth Tokens".
+  
+  ```html
+  <script
+    src="https://unpkg.com/@tinybirdco/flock.js"
+    data-token="p.eyJ1IjogImFiY2QxMjM0In0..."
+  ></script>
+  ```
+</ParamField>
+
+### Optional Parameters
+
+<ParamField path="data-host" type="string">
+  Tinybird host URL. Defaults to `https://api.tinybird.co/`.
+  
+  Use this if you're on a different region or a dedicated cluster:
+  - US East: `https://api.us-east.tinybird.co`
+  - EU: `https://api.tinybird.co` (default)
+  
+  ```html
+  <script
+    src="https://unpkg.com/@tinybirdco/flock.js"
+    data-token="YOUR_TOKEN"
+    data-host="https://api.us-east.tinybird.co"
+  ></script>
+  ```
+</ParamField>
+
+<ParamField path="data-datasource" type="string">
+  Override the default landing data source name. Defaults to `analytics_events`.
+  
+  Use this if you've customized your data source or want to ingest events into a different one.
+  
+  ```html
+  <script
+    src="https://unpkg.com/@tinybirdco/flock.js"
+    data-token="YOUR_TOKEN"
+    data-datasource="custom_analytics"
+  ></script>
+  ```
+</ParamField>
+
+<ParamField path="data-proxy" type="string">
+  Your domain URL to proxy tracking requests. Cannot be used together with `data-proxy-url`.
+  
+  The tracker will automatically append `/api/tracking` to the domain.
+  
+  ```html
+  <script
+    src="https://unpkg.com/@tinybirdco/flock.js"
+    data-token="YOUR_TOKEN"
+    data-proxy="https://yourdomain.com"
+  ></script>
+  ```
+  
+  <Warning>
+    Do not use both `data-proxy` and `data-proxy-url` together. The script will throw an error.
+  </Warning>
+</ParamField>
+
+<ParamField path="data-proxy-url" type="string">
+  A complete proxy URL endpoint for tracking requests. Cannot be used together with `data-proxy`.
+  
+  Use this when you need to specify a custom tracking endpoint beyond just the domain.
+  
+  ```html
+  <script
+    src="https://unpkg.com/@tinybirdco/flock.js"
+    data-token="YOUR_TOKEN"
+    data-proxy-url="https://yourdomain.com/custom/tracking/endpoint"
+  ></script>
+  ```
+</ParamField>
+
+<ParamField path="web-vitals" type="boolean" default="false">
+  Enable Web Vitals tracking. Set to `true` to track Core Web Vitals metrics.
+  
+  ```html
+  <script
+    src="https://unpkg.com/@tinybirdco/flock.js"
+    data-token="YOUR_TOKEN"
+    web-vitals="true"
+  ></script>
+  ```
+  
+  See [Web Vitals](/tracking/web-vitals) for more details.
+</ParamField>
+
+<ParamField path="data-storage" type="string" default="cookie">
+  Storage method for session management. Options: `cookie`, `localStorage`, `sessionStorage`.
+  
+  ```html
+  <script
+    src="https://unpkg.com/@tinybirdco/flock.js"
+    data-token="YOUR_TOKEN"
+    data-storage="localStorage"
+  ></script>
+  ```
+</ParamField>
+
+<ParamField path="data-stringify-payload" type="boolean" default="true">
+  Whether to stringify the payload. Set to `false` to send the payload as an object.
+  
+  ```html
+  <script
+    src="https://unpkg.com/@tinybirdco/flock.js"
+    data-token="YOUR_TOKEN"
+    data-stringify-payload="false"
+  ></script>
+  ```
+</ParamField>
+
+## Multi-tenancy and Multi-domain
+
+The tracker supports collecting data from multiple tenants and domains in a single data source.
+
+<ParamField path="data-domain" type="string">
+  Domain identifier for multi-domain tracking.
+  
+  ```html
+  <script
+    src="https://unpkg.com/@tinybirdco/flock.js"
+    data-token="YOUR_TOKEN"
+    data-domain="project_domain"
+  ></script>
+  ```
+</ParamField>
+
+<ParamField path="data-tenant-id" type="string">
+  Tenant identifier for multi-tenancy support.
+  
+  ```html
+  <script
+    src="https://unpkg.com/@tinybirdco/flock.js"
+    data-token="YOUR_TOKEN"
+    data-tenant-id="project_tenant_id"
+  ></script>
+  ```
+</ParamField>
+
+### Filtering by Tenant
+
+All endpoints can be filtered by `tenant_id` and `domain`. You can also use JWT tokens with fixed params:
+
+```json
+{
+  "fixed_params": {
+    "tenant_id": "your-tenant-id"
+  }
+}
+```
+
+Learn more about [JWT tokens in Tinybird](https://www.tinybird.co/docs/forward/administration/tokens/jwt).
+
+## Complete Example
+
+Here's a full example with multiple configuration options:
+
+```html
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>My Website</title>
+    <!-- Tinybird Analytics -->
+    <script
+      defer
+      src="https://unpkg.com/@tinybirdco/flock.js"
+      data-token="p.eyJ1IjogImFiY2QxMjM0In0..."
+      data-host="https://api.tinybird.co"
+      data-domain="mywebsite.com"
+      data-tenant-id="tenant-123"
+      web-vitals="true"
+      data-storage="localStorage"
+    ></script>
+  </head>
+  <body>
+    <h1>Welcome to my website</h1>
+  </body>
+</html>
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Page Views" icon="eye" href="/tracking/page-views">
+    Learn how page view tracking works
+  </Card>
+  <Card title="Custom Events" icon="bolt" href="/tracking/custom-events">
+    Track custom events on your website
+  </Card>
+  <Card title="Web Vitals" icon="gauge" href="/tracking/web-vitals">
+    Monitor Core Web Vitals metrics
+  </Card>
+  <Card title="Configuration" icon="gear" href="/tracking/configuration">
+    Advanced configuration options
+  </Card>
+</CardGroup>

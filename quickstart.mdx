@@ -1,80 +1,290 @@
 ---
 title: "Quickstart"
-description: "Start building awesome documentation in minutes"
+description: "Get your web analytics platform up and running in minutes"
 ---
 
-## Get started in three steps
+Build your own privacy-first web analytics platform using Tinybird's Events API and Endpoints. This guide will help you deploy the data project, add tracking to your website, and access real-time analytics.
 
-Get your documentation site running locally and make your first customization.
+## Prerequisites
 
-### Step 1: Set up your local environment
+Before you begin, make sure you have:
 
-<AccordionGroup>
-  <Accordion icon="copy" title="Clone your docs locally">
-    During the onboarding process, you created a GitHub repository with your docs content if you didn't already have one. You can find a link to this repository in your [dashboard](https://dashboard.mintlify.com).
-    
-    To clone the repository locally so that you can make and preview changes to your docs, follow the [Cloning a repository](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository) guide in the GitHub docs.
-  </Accordion>
-  <Accordion icon="rectangle-terminal" title="Start the preview server">
-    1. Install the Mintlify CLI: `npm i -g mint`
-    2. Navigate to your docs directory and run: `mint dev`
-    3. Open `http://localhost:3000` to see your docs live!
-    
-    <Tip>Your preview updates automatically as you edit files.</Tip>
-  </Accordion>
-</AccordionGroup>
+- A [Tinybird account](https://www.tinybird.co/) and workspace
+- Node.js 22 or higher installed
+- Git installed on your machine
 
-### Step 2: Deploy your changes
+<Steps>
 
-<AccordionGroup>
-  <Accordion icon="github" title="Install our GitHub app">
-    Install the Mintlify GitHub app from your [dashboard](https://dashboard.mintlify.com/settings/organization/github-app).
-    
-    Our GitHub app automatically deploys your changes to your docs site, so you don't need to manage deployments yourself.
-</Accordion>
-<Accordion icon="palette" title="Update your site name and colors">
-    For a first change, let's update the name and colors of your docs site.
+### Clone the repository
 
-    1. Open `docs.json` in your editor.
-    2. Change the `"name"` field to your project name.
-    3. Update the `"colors"` to match your brand.
-    4. Save and see your changes instantly at `http://localhost:3000`.
+First, clone the Web Analytics Starter Kit repository to your local machine:
 
-    <Tip>Try changing the primary color to see an immediate difference!</Tip>
-  </Accordion>
-</AccordionGroup>
+```bash
+git clone https://github.com/tinybirdco/web-analytics-starter-kit
+cd web-analytics-starter-kit
+```
 
-### Step 3: Go live
+### Deploy the Tinybird data project
 
-<Accordion icon="rocket" title="Publish your docs">
-  1. Commit and push your changes.
-  2. Your docs will update and be live in moments!
-</Accordion>
+Navigate to the `tinybird` directory and install dependencies:
+
+<CodeGroup>
+
+```bash npm
+cd tinybird
+npm install
+```
+
+```bash pnpm
+cd tinybird
+pnpm install
+```
+
+```bash yarn
+cd tinybird
+yarn install
+```
+
+</CodeGroup>
+
+Login to your Tinybird account and deploy the project:
+
+```bash
+npx tinybird login
+npx tinybird deploy
+```
+
+This command will:
+- Create the `analytics_events` datasource to store your web events
+- Deploy materialized views for aggregated metrics
+- Set up API endpoints for querying your analytics data
+- Create two authentication tokens: `dashboard` (for reading data) and `tracker` (for sending events)
+
+<Note>
+The deployment process creates all necessary resources including datasources, pipes, materializations, and endpoints defined in the `/tinybird/src` directory.
+</Note>
+
+### Get your authentication tokens
+
+After deployment, you'll need two tokens:
+
+1. **Tracker token** - For sending events from your website
+2. **Dashboard token** - For reading analytics data in the dashboard
+
+You can find these tokens in your [Tinybird dashboard](https://cloud.tinybird.co/tokens) under **Manage Auth Tokens**.
+
+<Warning>
+Keep your tokens secure! The tracker token will be public (embedded in your website), while the dashboard token should remain private.
+</Warning>
+
+### Add tracking to your website
+
+Add the following script within your website's `<head>` section, replacing `YOUR_TRACKER_TOKEN` with your actual tracker token:
+
+```html
+<script
+  defer
+  src="https://unpkg.com/@tinybirdco/flock.js"
+  data-token="YOUR_TRACKER_TOKEN"
+></script>
+```
+
+Once the script is loaded, you'll automatically start receiving `page_hit` events as visitors view and interact with your website.
+
+<Tip>
+The `defer` attribute ensures the script doesn't block page rendering, improving your site's performance.
+</Tip>
+
+#### Optional tracking parameters
+
+You can customize the tracking behavior with these optional parameters:
+
+```html
+<script
+  defer
+  src="https://unpkg.com/@tinybirdco/flock.js"
+  data-token="YOUR_TRACKER_TOKEN"
+  data-host="https://api.tinybird.co"
+  data-domain="example.com"
+  data-tenant-id="my-tenant"
+  web-vitals="true"
+></script>
+```
+
+| Parameter | Description |
+| --- | --- |
+| `data-token` | Your tracker token (required) |
+| `data-host` | Tinybird host URL. Defaults to `https://api.tinybird.co/` |
+| `data-domain` | Your domain for multi-domain tracking |
+| `data-tenant-id` | Tenant identifier for multi-tenancy support |
+| `web-vitals` | Set to `"true"` to track Core Web Vitals metrics |
+| `data-datasource` | Custom datasource name if different from default |
+| `data-proxy` | Your domain URL to proxy requests (for GDPR compliance) |
+
+### Access the dashboard
+
+You have two options to view your analytics:
+
+#### Option 1: Use the hosted dashboard
+
+Visit [https://analytics.tinybird.live](https://analytics.tinybird.live) and enter your **dashboard token** to access your analytics immediately.
+
+#### Option 2: Deploy your own dashboard
+
+For full customization, deploy the dashboard to Vercel:
+
+<CodeGroup>
+
+```bash npm
+cd dashboard
+npm install
+npm run dev
+```
+
+```bash pnpm
+cd dashboard
+pnpm install
+pnpm dev
+```
+
+```bash yarn
+cd dashboard
+yarn install
+yarn dev
+```
+
+</CodeGroup>
+
+Create a `.env.local` file in the `dashboard` directory:
+
+```bash
+# Tinybird Configuration (server-only, required)
+TINYBIRD_TOKEN=your-dashboard-token
+TINYBIRD_HOST=https://api.tinybird.co
+
+# Dashboard URL (public)
+NEXT_PUBLIC_TINYBIRD_DASHBOARD_URL=http://localhost:3000
+
+# Tracker token for analytics (public, optional)
+NEXT_PUBLIC_TINYBIRD_TRACKER_TOKEN=your-tracker-token
+
+# Dashboard Basic Auth (server-only, defaults to admin/admin if not set)
+DASHBOARD_USERNAME=admin
+DASHBOARD_PASSWORD=changeme
+
+# Optional: Set to "true" to disable auth during development
+DISABLE_AUTH=false
+```
+
+Open [http://localhost:3000](http://localhost:3000) to view your analytics dashboard.
+
+<Note>
+The dashboard includes built-in authentication with default credentials `admin/admin`. Customize these by setting `DASHBOARD_USERNAME` and `DASHBOARD_PASSWORD` environment variables.
+</Note>
+
+</Steps>
+
+## Track custom events
+
+Beyond automatic page views, you can track custom events for eCommerce, conversions, or any user interaction:
+
+```javascript
+Tinybird.trackEvent('add_to_cart', {
+  partnumber: 'A1708 (EMC 3164)',
+  quantity: 1,
+  price: 1299.99
+})
+```
+
+```javascript
+Tinybird.trackEvent('purchase', {
+  order_id: 'ORD-12345',
+  total: 2599.98,
+  items: 2
+})
+```
+
+Custom events are stored in the `payload` column of the `analytics_events` datasource and can be queried through the Tinybird API.
+
+## Track Web Vitals
+
+Monitor Core Web Vitals (LCP, FCP, TTFB, INP, CLS) by enabling the `web-vitals` parameter:
+
+```html
+<script
+  defer
+  src="https://unpkg.com/@tinybirdco/flock.js"
+  data-token="YOUR_TRACKER_TOKEN"
+  web-vitals="true"
+></script>
+```
+
+Web Vitals events are automatically tracked with details about performance metrics:
+
+```json
+{"name":"LCP","value":68,"delta":68,"id":"v3-1752067824029-4726354841567","pathname":"/","href":"http://localhost:8081/"}
+{"name":"TTFB","value":41.1,"delta":41.1,"id":"v3-1752067821037-7353415626830","pathname":"/","href":"http://localhost:8081/"}
+```
 
 ## Next steps
 
-Now that you have your docs running, explore these key features:
-
 <CardGroup cols={2}>
 
-<Card title="Write Content" icon="pen-to-square" href="/essentials/markdown">
-  Learn MDX syntax and start writing your documentation.
+<Card title="Multi-tenancy" icon="users" href="/advanced/multi-tenancy">
+  Set up multi-tenant tracking for SaaS applications
 </Card>
 
-<Card title="Customize style" icon="palette" href="/essentials/settings">
-  Make your docs match your brand perfectly.
+<Card title="Custom attributes" icon="tags" href="/advanced/custom-attributes">
+  Add custom data attributes to every event
 </Card>
 
-<Card title="Add code examples" icon="square-code" href="/essentials/code">
-  Include syntax-highlighted code blocks.
+<Card title="GDPR compliance" icon="shield-check" href="/advanced/gdpr-compliance">
+  Implement privacy-first analytics with proxy tracking
 </Card>
 
-<Card title="API documentation" icon="code" href="/api-reference/introduction">
-  Auto-generate API docs from OpenAPI specs.
+<Card title="API reference" icon="code" href="/api/current-visitors">
+  Query your analytics data programmatically
 </Card>
 
 </CardGroup>
 
+## Verify your setup
+
+To confirm everything is working:
+
+1. Visit a page on your website with the tracking script installed
+2. Open your dashboard (hosted or local)
+3. Check the **Current Visitors** widget for real-time data
+4. Navigate through the dashboard to see page views, traffic sources, and device breakdowns
+
+<Tip>
+It may take a few seconds for events to appear in your dashboard. Tinybird processes events in real-time, but your browser may cache dashboard data.
+</Tip>
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Events not appearing in dashboard">
+    - Verify your tracker token is correct in the script tag
+    - Check the browser console for any errors
+    - Ensure the script is loaded (check Network tab in DevTools)
+    - Confirm your dashboard token has read access to the endpoints
+  </Accordion>
+  
+  <Accordion title="Deployment fails">
+    - Ensure you're logged in with `npx tinybird login`
+    - Check that your admin token has deployment permissions
+    - Verify Node.js version is 22 or higher
+    - Try running `pnpm install` again to ensure dependencies are installed
+  </Accordion>
+  
+  <Accordion title="Dashboard authentication issues">
+    - Default credentials are `admin/admin`
+    - Set custom credentials in `.env.local` using `DASHBOARD_USERNAME` and `DASHBOARD_PASSWORD`
+    - For local development, you can disable auth with `DISABLE_AUTH=true`
+  </Accordion>
+</AccordionGroup>
+
 <Note>
-  **Need help?** See our [full documentation](https://mintlify.com/docs) or join our [community](https://mintlify.com/community).
+Need more help? Join the [Tinybird Community Slack](https://www.tinybird.co/join-our-slack-community) or check the [Tinybird Documentation](https://docs.tinybird.co/).
 </Note>

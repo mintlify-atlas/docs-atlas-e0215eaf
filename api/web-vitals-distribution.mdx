@@ -1,0 +1,283 @@
+---
+title: "Web Vitals Distribution"
+api: "GET /web_vitals_distribution"
+description: "Get web vitals performance distribution across excellent, good, and poor categories with optional period-over-period comparison"
+---
+
+Returns the distribution of web vitals measurements across performance categories (excellent, good, poor) with percentages and statistical metrics. Optionally includes previous period data for growth analysis.
+
+## Endpoint
+
+```
+GET https://api.tinybird.co/v0/pipes/web_vitals_distribution.json
+```
+
+## Parameters
+
+<ParamField query="date_from" type="string" optional>
+  Start date for the analysis period (YYYY-MM-DD format). If not provided, defaults to yesterday.
+</ParamField>
+
+<ParamField query="date_to" type="string" optional>
+  End date for the analysis period (YYYY-MM-DD format). If not provided, defaults to today.
+</ParamField>
+
+<ParamField query="tenant_id" type="string" optional>
+  Filter results by tenant ID for multi-tenant applications.
+</ParamField>
+
+<ParamField query="domain" type="string" optional>
+  Filter results by domain name (e.g., "example.com").
+</ParamField>
+
+<ParamField query="include_previous_period" type="string" optional>
+  Set to "true" to include previous period metrics and growth percentages. The previous period will be calculated automatically based on the length of the current period.
+</ParamField>
+
+## Web Vitals Metrics Tracked
+
+This endpoint tracks all five Core Web Vitals metrics and categorizes each measurement:
+
+### Performance Categories
+
+Each measurement is categorized into one of three performance buckets:
+
+- **Excellent**: Meets or exceeds the excellent threshold
+- **Good**: Between excellent and good thresholds
+- **Poor**: Exceeds the good threshold
+
+### Metric Thresholds
+
+**LCP (Largest Contentful Paint)**
+- Excellent: ≤2500ms
+- Good: ≤4000ms
+- Poor: >4000ms
+
+**TTFB (Time to First Byte)**
+- Excellent: ≤500ms
+- Good: ≤1000ms
+- Poor: >1000ms
+
+**FCP (First Contentful Paint)**
+- Excellent: ≤1800ms
+- Good: ≤3000ms
+- Poor: >3000ms
+
+**INP (Interaction to Next Paint)**
+- Excellent: ≤200ms
+- Good: ≤500ms
+- Poor: >500ms
+
+**CLS (Cumulative Layout Shift)**
+- Excellent: ≤0.1
+- Good: ≤0.25
+- Poor: >0.25
+
+## Response Fields
+
+<ResponseField name="metric_name" type="string">
+  The name of the web vitals metric (LCP, TTFB, FCP, INP, or CLS).
+</ResponseField>
+
+<ResponseField name="performance_category" type="string">
+  The performance category: "excellent", "good", or "poor".
+</ResponseField>
+
+<ResponseField name="avg_value" type="float">
+  Average value for this metric within this performance category.
+</ResponseField>
+
+<ResponseField name="p75" type="float">
+  75th percentile value for this category.
+</ResponseField>
+
+<ResponseField name="p90" type="float">
+  90th percentile value for this category.
+</ResponseField>
+
+<ResponseField name="p95" type="float">
+  95th percentile value for this category.
+</ResponseField>
+
+<ResponseField name="p99" type="float">
+  99th percentile value for this category.
+</ResponseField>
+
+<ResponseField name="measurement_count" type="integer">
+  Number of measurements in this category.
+</ResponseField>
+
+<ResponseField name="percentage" type="float">
+  Percentage of total measurements for this metric that fall into this category.
+</ResponseField>
+
+<ResponseField name="total_measurements" type="integer">
+  Total number of measurements for this metric across all categories.
+</ResponseField>
+
+<ResponseField name="score" type="integer">
+  Performance score for this category (100 for excellent, 75 for good, 25 for poor).
+</ResponseField>
+
+<ResponseField name="units" type="string">
+  Units for the metric value ("ms" or "score").
+</ResponseField>
+
+<ResponseField name="thresholds" type="string">
+  Text description of the performance thresholds.
+</ResponseField>
+
+<ResponseField name="description" type="string">
+  Description of what the metric measures.
+</ResponseField>
+
+<ResponseField name="domain" type="string">
+  The domain this data was collected from.
+</ResponseField>
+
+### Previous Period Fields (when include_previous_period="true")
+
+<ResponseField name="previous_avg_value" type="float" nullable>
+  Average value for this category in the previous period.
+</ResponseField>
+
+<ResponseField name="previous_p75" type="float" nullable>
+  75th percentile value in the previous period.
+</ResponseField>
+
+<ResponseField name="previous_p90" type="float" nullable>
+  90th percentile value in the previous period.
+</ResponseField>
+
+<ResponseField name="previous_p95" type="float" nullable>
+  95th percentile value in the previous period.
+</ResponseField>
+
+<ResponseField name="previous_p99" type="float" nullable>
+  99th percentile value in the previous period.
+</ResponseField>
+
+<ResponseField name="previous_measurement_count" type="integer" nullable>
+  Number of measurements in the previous period.
+</ResponseField>
+
+<ResponseField name="previous_total_measurements" type="integer" nullable>
+  Total measurements for this metric in the previous period.
+</ResponseField>
+
+<ResponseField name="previous_percentage" type="float" nullable>
+  Percentage of measurements in this category during the previous period.
+</ResponseField>
+
+<ResponseField name="avg_value_growth_percentage" type="float" nullable>
+  Percentage change in average value compared to previous period. Negative is better for timing metrics.
+</ResponseField>
+
+<ResponseField name="measurement_count_growth_percentage" type="float" nullable>
+  Percentage change in measurement count compared to previous period.
+</ResponseField>
+
+## Example Request
+
+```bash
+curl -H "Authorization: Bearer YOUR_TOKEN" \
+  "https://api.tinybird.co/v0/pipes/web_vitals_distribution.json?date_from=2024-01-01&date_to=2024-01-07&include_previous_period=true"
+```
+
+## Example Response
+
+```json
+{
+  "data": [
+    {
+      "metric_name": "LCP",
+      "performance_category": "excellent",
+      "avg_value": 1850.23,
+      "p75": 2100.45,
+      "p90": 2350.67,
+      "p95": 2450.89,
+      "p99": 2499.12,
+      "measurement_count": 8532,
+      "percentage": 68.5,
+      "total_measurements": 12456,
+      "previous_avg_value": 1920.45,
+      "previous_p75": 2180.23,
+      "previous_p90": 2400.56,
+      "previous_p95": 2480.78,
+      "previous_p99": 2499.90,
+      "previous_measurement_count": 7234,
+      "previous_total_measurements": 11890,
+      "previous_percentage": 60.8,
+      "avg_value_growth_percentage": -3.66,
+      "measurement_count_growth_percentage": 17.94,
+      "score": 100,
+      "units": "ms",
+      "thresholds": "Excellent: ≤2500ms, Good: ≤4000ms, Poor: >4000ms",
+      "description": "Largest Contentful Paint - measures loading performance",
+      "domain": "example.com"
+    },
+    {
+      "metric_name": "LCP",
+      "performance_category": "good",
+      "avg_value": 3234.56,
+      "p75": 3456.78,
+      "p90": 3678.90,
+      "p95": 3890.12,
+      "p99": 3999.34,
+      "measurement_count": 2876,
+      "percentage": 23.1,
+      "total_measurements": 12456,
+      "previous_avg_value": 3345.67,
+      "previous_p75": 3567.89,
+      "previous_p90": 3789.01,
+      "previous_p95": 3901.23,
+      "previous_p99": 3998.45,
+      "previous_measurement_count": 3234,
+      "previous_total_measurements": 11890,
+      "previous_percentage": 27.2,
+      "avg_value_growth_percentage": -3.32,
+      "measurement_count_growth_percentage": -11.07,
+      "score": 75,
+      "units": "ms",
+      "thresholds": "Excellent: ≤2500ms, Good: ≤4000ms, Poor: >4000ms",
+      "description": "Largest Contentful Paint - measures loading performance",
+      "domain": "example.com"
+    },
+    {
+      "metric_name": "LCP",
+      "performance_category": "poor",
+      "avg_value": 5234.78,
+      "p75": 5678.90,
+      "p90": 6789.01,
+      "p95": 7890.12,
+      "p99": 9876.54,
+      "measurement_count": 1048,
+      "percentage": 8.4,
+      "total_measurements": 12456,
+      "previous_avg_value": 5567.89,
+      "previous_p75": 6012.34,
+      "previous_p90": 7123.45,
+      "previous_p95": 8234.56,
+      "previous_p99": 10234.78,
+      "previous_measurement_count": 1422,
+      "previous_total_measurements": 11890,
+      "previous_percentage": 12.0,
+      "avg_value_growth_percentage": -5.98,
+      "measurement_count_growth_percentage": -26.30,
+      "score": 25,
+      "units": "ms",
+      "thresholds": "Excellent: ≤2500ms, Good: ≤4000ms, Poor: >4000ms",
+      "description": "Largest Contentful Paint - measures loading performance",
+      "domain": "example.com"
+    }
+  ]
+}
+```
+
+## Use Cases
+
+- **Performance Distribution Analysis**: Understand what percentage of your users experience excellent, good, or poor performance
+- **Trend Analysis**: Track how distribution changes over time with period-over-period comparison
+- **Goal Setting**: Monitor progress toward improving the percentage of excellent experiences
+- **Performance Regression Detection**: Identify when the distribution shifts toward poor performance
+- **User Experience Insights**: Understand the full spectrum of performance your users experience

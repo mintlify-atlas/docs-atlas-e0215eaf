@@ -1,0 +1,545 @@
+---
+title: 'Custom Events'
+description: 'Track custom events and user interactions on your website'
+---
+
+## Overview
+
+Beyond automatic page view tracking, the Tinybird tracker provides a JavaScript API for tracking custom events. Use this to capture:
+
+- **User interactions** - Clicks, form submissions, scrolls
+- **Business events** - Add to cart, purchases, sign-ups
+- **Feature usage** - Tool usage, settings changes
+- **Custom metrics** - Any domain-specific events
+
+## Basic Usage
+
+Once the tracker script is loaded, use the global `Tinybird.trackEvent()` function:
+
+```javascript
+Tinybird.trackEvent('event_name', {
+  // Your custom properties
+})
+```
+
+## Function Signature
+
+<ParamField path="name" type="string" required>
+  Event name identifier. Use descriptive, snake_case names.
+  
+  Examples: `add_to_cart`, `purchase_complete`, `video_play`
+</ParamField>
+
+<ParamField path="payload" type="object" required>
+  Event properties as a JavaScript object. Can include any custom data relevant to your event.
+  
+  <Warning>
+    Payload must be between 2 and 10,240 bytes when stringified.
+  </Warning>
+</ParamField>
+
+## Examples
+
+### E-Commerce Events
+
+<CodeGroup>
+```javascript Add to Cart
+Tinybird.trackEvent('add_to_cart', {
+  partnumber: 'A1708 (EMC 3164)',
+  quantity: 1,
+  price: 299.99,
+  currency: 'USD'
+})
+```
+
+```javascript Purchase
+Tinybird.trackEvent('purchase_complete', {
+  order_id: 'ORD-12345',
+  total: 599.98,
+  currency: 'USD',
+  items: 2,
+  payment_method: 'credit_card'
+})
+```
+
+```javascript Product View
+Tinybird.trackEvent('product_view', {
+  product_id: 'PROD-789',
+  product_name: 'MacBook Pro',
+  category: 'Laptops',
+  price: 1299.99
+})
+```
+</CodeGroup>
+
+### User Interactions
+
+<CodeGroup>
+```javascript Button Click
+document.querySelector('#cta-button').addEventListener('click', () => {
+  Tinybird.trackEvent('cta_click', {
+    button_id: 'cta-button',
+    button_text: 'Get Started',
+    page: window.location.pathname
+  })
+})
+```
+
+```javascript Form Submission
+document.querySelector('#signup-form').addEventListener('submit', (e) => {
+  Tinybird.trackEvent('form_submit', {
+    form_id: 'signup-form',
+    form_type: 'newsletter',
+    success: true
+  })
+})
+```
+
+```javascript Video Play
+videoPlayer.addEventListener('play', () => {
+  Tinybird.trackEvent('video_play', {
+    video_id: 'intro-video',
+    video_title: 'Product Introduction',
+    duration: 120,
+    position: videoPlayer.currentTime
+  })
+})
+```
+</CodeGroup>
+
+### Feature Usage
+
+<CodeGroup>
+```javascript Search
+Tinybird.trackEvent('search', {
+  query: searchInput.value,
+  results_count: results.length,
+  filters_applied: activeFilters.length
+})
+```
+
+```javascript Download
+Tinybird.trackEvent('file_download', {
+  file_name: 'product-catalog.pdf',
+  file_size: 2048576,
+  file_type: 'pdf'
+})
+```
+
+```javascript Settings Change
+Tinybird.trackEvent('settings_update', {
+  setting_name: 'notifications',
+  old_value: 'enabled',
+  new_value: 'disabled'
+})
+```
+</CodeGroup>
+
+## Event Data Structure
+
+Custom events are sent with the same structure as page views:
+
+```json
+{
+  "timestamp": "2024-03-11T14:23:45.123Z",
+  "action": "add_to_cart",
+  "version": "1",
+  "session_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+  "tenant_id": "my-tenant",
+  "domain": "example.com",
+  "payload": {
+    "partnumber": "A1708 (EMC 3164)",
+    "quantity": 1,
+    "price": 299.99,
+    "currency": "USD"
+  }
+}
+```
+
+<ParamField path="action" type="string">
+  The event name you specified in `trackEvent()`.
+</ParamField>
+
+<ParamField path="payload" type="object">
+  The custom properties you provided, plus any global attributes.
+</ParamField>
+
+## Implementation Details
+
+### Event Sending Function
+
+From the source code (`middleware/src/index.js:224-283`):
+
+```javascript
+async function _sendEvent(name, payload) {
+  _setSessionId()
+
+  if (!_isValidUserAgent(window.navigator.userAgent)) {
+    return
+  }
+
+  let url
+  if (proxyUrl) {
+    url = proxyUrl
+  } else if (proxy) {
+    url = `${proxy}/api/tracking`
+  } else if (host) {
+    host = host.replaceAll(/\/+$/gm, '')
+    url = `${host}/v0/events?name=${DATASOURCE}&token=${token}`
+  } else {
+    url = `https://api.tinybird.co/v0/events?name=${DATASOURCE}&token=${token}`
+  }
+
+  let processedPayload
+  if (stringifyPayload) {
+    processedPayload = _maskSuspiciousAttributes(payload)
+    processedPayload = Object.assign({}, JSON.parse(processedPayload), globalAttributes)
+    processedPayload = JSON.stringify(processedPayload)
+
+    if (!_isValidPayload(processedPayload)) {
+      return
+    }
+  } else {
+    processedPayload = Object.assign({}, payload, globalAttributes)
+    const maskedStr = _maskSuspiciousAttributes(processedPayload)
+
+    if (!_isValidPayload(maskedStr)) {
+      return
+    }
+
+    processedPayload = JSON.parse(maskedStr)
+  }
+
+  const session_id = _getSessionId() || _uuidv4()
+
+  const request = new XMLHttpRequest()
+  request.open('POST', url, true)
+  request.setRequestHeader('Content-Type', 'application/json')
+  request.send(
+    JSON.stringify({
+      timestamp: new Date().toISOString(),
+      action: name,
+      version: '1',
+      session_id,
+      tenant_id: tenantId,
+      domain,
+      payload: processedPayload,
+    })
+  )
+}
+
+// Exposed to window
+window.Tinybird = { trackEvent: _sendEvent }
+```
+
+## Global Attributes
+
+You can define attributes that will be included in every event using the `data-tb-*` prefix on the script tag.
+
+### Usage
+
+```html
+<script
+  src="https://unpkg.com/@tinybirdco/flock.js"
+  data-token="YOUR_TRACKER_TOKEN"
+  data-tb-app-version="2.1.0"
+  data-tb-environment="production"
+  data-tb-user-segment="premium"
+></script>
+```
+
+### Result
+
+Every event will include these attributes in the payload:
+
+```json
+{
+  "action": "add_to_cart",
+  "payload": {
+    "partnumber": "A1708 (EMC 3164)",
+    "quantity": 1,
+    "app_version": "2.1.0",
+    "environment": "production",
+    "user_segment": "premium"
+  }
+}
+```
+
+<Note>
+  Hyphens in attribute names are automatically converted to underscores.
+  `data-tb-my-custom-attr` becomes `my_custom_attr`
+</Note>
+
+### Implementation
+
+From the source code (`middleware/src/index.js:33-40`):
+
+```javascript
+let globalAttributes = {}
+
+for (const attr of document.currentScript.attributes) {
+  if (attr.name.startsWith('tb_')) {
+    globalAttributes[attr.name.slice(3).replace(/-/g, '_')] = attr.value
+  }
+  if (attr.name.startsWith('data-tb-')) {
+    globalAttributes[attr.name.slice(8).replace(/-/g, '_')] = attr.value
+  }
+}
+```
+
+## Privacy & Security
+
+### Automatic PII Masking
+
+The tracker automatically masks potentially sensitive fields:
+
+```javascript
+const attributesToMask = [
+  'username', 'user', 'user_id', 'userid',
+  'password', 'pass', 'pin', 'passcode',
+  'token', 'api_token', 'email', 'address',
+  'phone', 'sex', 'gender', 'order', 'order_id',
+  'orderid', 'payment', 'credit_card',
+]
+```
+
+**Before masking:**
+```json
+{
+  "email": "user@example.com",
+  "order_id": "12345"
+}
+```
+
+**After masking:**
+```json
+{
+  "email": "********",
+  "order_id": "********"
+}
+```
+
+<Warning>
+  While automatic masking helps, **never intentionally track PII** like passwords, credit card numbers, or personal identification numbers.
+</Warning>
+
+### Payload Validation
+
+Events are validated before sending:
+
+<Tabs>
+  <Tab title="Size Limits">
+    ```javascript
+    function _isValidPayload(payloadStr) {
+      if (!payloadStr || typeof payloadStr !== 'string') {
+        return false
+      }
+      if (payloadStr.length < 2 || payloadStr.length > 10240) {
+        return false
+      }
+      return true
+    }
+    ```
+    
+    - Minimum: 2 bytes
+    - Maximum: 10,240 bytes (10 KB)
+  </Tab>
+  
+  <Tab title="User Agent">
+    ```javascript
+    function _isValidUserAgent(userAgent) {
+      if (!userAgent || typeof userAgent !== 'string') {
+        return true
+      }
+      if (userAgent.length > 500) {
+        return false
+      }
+      return true
+    }
+    ```
+    
+    User agents over 500 characters are rejected.
+  </Tab>
+</Tabs>
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Use Consistent Naming">
+    Use snake_case for event names and property keys:
+    
+    **Good:**
+    ```javascript
+    Tinybird.trackEvent('add_to_cart', {
+      product_id: '123',
+      product_name: 'Analytics Tool'
+    })
+    ```
+    
+    **Bad:**
+    ```javascript
+    Tinybird.trackEvent('AddToCart', {
+      ProductID: '123',
+      'Product Name': 'Analytics Tool'
+    })
+    ```
+  </Accordion>
+  
+  <Accordion title="Keep Payloads Small">
+    Only include necessary data. Large payloads may be rejected.
+    
+    **Good:**
+    ```javascript
+    Tinybird.trackEvent('search', {
+      query: 'analytics',
+      results: 42
+    })
+    ```
+    
+    **Bad:**
+    ```javascript
+    Tinybird.trackEvent('search', {
+      query: 'analytics',
+      results: results.map(r => ({ /* full object */ }))
+    })
+    ```
+  </Accordion>
+  
+  <Accordion title="Use Semantic Event Names">
+    Event names should describe what happened, not implementation details.
+    
+    **Good:**
+    - `purchase_complete`
+    - `video_play`
+    - `signup_start`
+    
+    **Bad:**
+    - `button_click`
+    - `div_123_interaction`
+    - `function_called`
+  </Accordion>
+  
+  <Accordion title="Include Context">
+    Add contextual information to help with analysis.
+    
+    ```javascript
+    Tinybird.trackEvent('error_occurred', {
+      error_code: 'AUTH_001',
+      error_message: 'Invalid token',
+      page: window.location.pathname,
+      user_action: 'login_attempt'
+    })
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Testing Events
+
+To test your custom events during development:
+
+1. **Open browser console** and verify the Tinybird object exists:
+   ```javascript
+   console.log(window.Tinybird)
+   // { trackEvent: ƒ _sendEvent(name, payload) }
+   ```
+
+2. **Manually trigger events:**
+   ```javascript
+   Tinybird.trackEvent('test_event', { test: true })
+   ```
+
+3. **Check network tab** for POST requests to Tinybird
+
+4. **Verify in Tinybird UI** that events appear in your data source
+
+## Framework Integration
+
+<Tabs>
+  <Tab title="React">
+    ```jsx
+    import { useEffect } from 'react'
+    
+    function ProductCard({ product }) {
+      const handleAddToCart = () => {
+        // Track event
+        window.Tinybird.trackEvent('add_to_cart', {
+          product_id: product.id,
+          product_name: product.name,
+          price: product.price
+        })
+        
+        // Add to cart logic
+        addToCart(product)
+      }
+      
+      return (
+        <button onClick={handleAddToCart}>
+          Add to Cart
+        </button>
+      )
+    }
+    ```
+  </Tab>
+  
+  <Tab title="Vue">
+    ```vue
+    <template>
+      <button @click="handleAddToCart">
+        Add to Cart
+      </button>
+    </template>
+    
+    <script>
+    export default {
+      methods: {
+        handleAddToCart() {
+          // Track event
+          window.Tinybird.trackEvent('add_to_cart', {
+            product_id: this.product.id,
+            product_name: this.product.name,
+            price: this.product.price
+          })
+          
+          // Add to cart logic
+          this.addToCart(this.product)
+        }
+      }
+    }
+    </script>
+    ```
+  </Tab>
+  
+  <Tab title="Next.js">
+    ```jsx
+    'use client'
+    
+    import { useEffect } from 'react'
+    
+    export default function ProductPage({ product }) {
+      useEffect(() => {
+        // Track page view with custom data
+        if (window.Tinybird) {
+          window.Tinybird.trackEvent('product_view', {
+            product_id: product.id,
+            product_name: product.name,
+            category: product.category
+          })
+        }
+      }, [product])
+      
+      return <div>...</div>
+    }
+    ```
+  </Tab>
+</Tabs>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Web Vitals" icon="gauge" href="/tracking/web-vitals">
+    Track Core Web Vitals performance metrics
+  </Card>
+  <Card title="Configuration" icon="gear" href="/tracking/configuration">
+    Advanced configuration options
+  </Card>
+</CardGroup>

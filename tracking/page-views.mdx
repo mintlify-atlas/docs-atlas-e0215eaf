@@ -1,0 +1,337 @@
+---
+title: 'Page Views'
+description: 'Understand how the Tinybird tracker automatically captures page views and navigation events'
+---
+
+## Overview
+
+The Tinybird tracker automatically captures page views when visitors navigate your website. It works seamlessly with:
+
+- **Traditional multi-page websites** - Tracks each page load
+- **Single Page Applications (SPAs)** - Tracks client-side navigation
+- **Hash-based routing** - Monitors hash changes
+- **History API** - Captures pushState and popState events
+
+## Automatic Tracking
+
+Once the tracker script is installed, page view tracking starts automatically. No additional code is required.
+
+```html
+<script
+  defer
+  src="https://unpkg.com/@tinybirdco/flock.js"
+  data-token="YOUR_TRACKER_TOKEN"
+></script>
+```
+
+## How It Works
+
+### Initial Page Load
+
+When a visitor first lands on your website, the tracker:
+
+1. Generates or retrieves a session ID
+2. Collects page metadata
+3. Sends a `page_hit` event to Tinybird
+
+### SPA Navigation
+
+For single-page applications, the tracker monitors:
+
+<Tabs>
+  <Tab title="Hash Changes">
+    ```javascript
+    // Automatically tracked
+    window.addEventListener('hashchange', _trackPageHit)
+    ```
+    
+    When the URL hash changes (e.g., `#/home` to `#/about`), a new page view is recorded.
+  </Tab>
+  
+  <Tab title="History API">
+    ```javascript
+    // Automatically tracked
+    const originalPushState = history.pushState
+    history.pushState = function () {
+      originalPushState.apply(this, arguments)
+      _trackPageHit()
+    }
+    window.addEventListener('popstate', _trackPageHit)
+    ```
+    
+    When using `history.pushState()` or the back/forward buttons, page views are captured.
+  </Tab>
+  
+  <Tab title="Prerendering">
+    ```javascript
+    // Handles prerendered pages
+    if (document.visibilityState === 'prerender') {
+      document.addEventListener('visibilitychange', handleVisibilityChange)
+    }
+    ```
+    
+    For prerendered pages, tracking waits until the page becomes visible.
+  </Tab>
+</Tabs>
+
+## Event Data Structure
+
+Each `page_hit` event includes the following data:
+
+<ParamField path="timestamp" type="string">
+  ISO 8601 timestamp of when the event occurred.
+  
+  Example: `"2024-03-11T14:23:45.123Z"`
+</ParamField>
+
+<ParamField path="action" type="string">
+  Event type, always `"page_hit"` for page views.
+</ParamField>
+
+<ParamField path="session_id" type="string">
+  Unique identifier for the user session (UUID v4).
+  
+  Example: `"a1b2c3d4-e5f6-7890-abcd-ef1234567890"`
+</ParamField>
+
+<ParamField path="version" type="string">
+  Tracker version, currently `"1"`.
+</ParamField>
+
+<ParamField path="tenant_id" type="string">
+  Tenant identifier (if configured with `data-tenant-id`).
+</ParamField>
+
+<ParamField path="domain" type="string">
+  Domain identifier (if configured with `data-domain`).
+</ParamField>
+
+<ParamField path="payload" type="object">
+  Contains detailed page information:
+  
+  <Expandable title="Payload Fields">
+    <ResponseField name="user-agent" type="string">
+      Browser user agent string.
+    </ResponseField>
+    
+    <ResponseField name="locale" type="string">
+      Browser language/locale (e.g., `"en-US"`).
+    </ResponseField>
+    
+    <ResponseField name="location" type="string">
+      Country code derived from timezone (e.g., `"US"`).
+    </ResponseField>
+    
+    <ResponseField name="referrer" type="string">
+      Page referrer URL.
+    </ResponseField>
+    
+    <ResponseField name="pathname" type="string">
+      Current page path (e.g., `"/products/analytics"`).
+    </ResponseField>
+    
+    <ResponseField name="href" type="string">
+      Full page URL.
+    </ResponseField>
+  </Expandable>
+</ParamField>
+
+### Example Event
+
+```json
+{
+  "timestamp": "2024-03-11T14:23:45.123Z",
+  "action": "page_hit",
+  "version": "1",
+  "session_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+  "tenant_id": "my-tenant",
+  "domain": "example.com",
+  "payload": {
+    "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)...",
+    "locale": "en-US",
+    "location": "US",
+    "referrer": "https://google.com",
+    "pathname": "/products/analytics",
+    "href": "https://example.com/products/analytics"
+  }
+}
+```
+
+## Session Management
+
+The tracker maintains user sessions with a 30-minute timeout.
+
+### Session ID Generation
+
+```javascript
+// From middleware/src/index.js
+function _uuidv4() {
+  return ([1e7] + -1e3 + -4e3 + -8e3 + -1e11).replace(/[018]/g, c =>
+    (
+      c ^
+      (crypto.getRandomValues(new Uint8Array(1))[0] & (15 >> (c / 4)))
+    ).toString(16)
+  )
+}
+```
+
+### Storage Options
+
+Sessions can be stored using different methods:
+
+<CodeGroup>
+```html Cookie (Default)
+<script
+  src="https://unpkg.com/@tinybirdco/flock.js"
+  data-token="YOUR_TOKEN"
+  data-storage="cookie"
+></script>
+```
+
+```html localStorage
+<script
+  src="https://unpkg.com/@tinybirdco/flock.js"
+  data-token="YOUR_TOKEN"
+  data-storage="localStorage"
+></script>
+```
+
+```html sessionStorage
+<script
+  src="https://unpkg.com/@tinybirdco/flock.js"
+  data-token="YOUR_TOKEN"
+  data-storage="sessionStorage"
+></script>
+```
+</CodeGroup>
+
+<Info>
+  **Cookie settings:**
+  - Max-Age: 1800 seconds (30 minutes)
+  - Path: `/`
+  - Secure: `true`
+  - Domain: Uses `data-domain` if specified
+</Info>
+
+## Privacy Features
+
+### Bot Detection
+
+The tracker automatically filters out requests from:
+
+```javascript
+// From middleware/src/index.js
+if (window.__nightmare || window.navigator.webdriver || window.Cypress)
+  return
+```
+
+- Testing frameworks (Nightmare, Selenium, Cypress)
+- Automated browsers
+
+### Data Validation
+
+The tracker validates data before sending:
+
+<Tabs>
+  <Tab title="User Agent">
+    ```javascript
+    function _isValidUserAgent(userAgent) {
+      if (!userAgent || typeof userAgent !== 'string') {
+        return true
+      }
+      if (userAgent.length > 500) {
+        return false
+      }
+      return true
+    }
+    ```
+    
+    User agent strings longer than 500 characters are rejected.
+  </Tab>
+  
+  <Tab title="Payload Size">
+    ```javascript
+    function _isValidPayload(payloadStr) {
+      if (!payloadStr || typeof payloadStr !== 'string') {
+        return false
+      }
+      if (payloadStr.length < 2 || payloadStr.length > 10240) {
+        return false
+      }
+      return true
+    }
+    ```
+    
+    Payload must be between 2 and 10,240 bytes.
+  </Tab>
+</Tabs>
+
+### PII Masking
+
+Sensitive attributes are automatically masked:
+
+```javascript
+const attributesToMask = [
+  'username', 'user', 'user_id', 'userid',
+  'password', 'pass', 'pin', 'passcode',
+  'token', 'api_token', 'email', 'address',
+  'phone', 'sex', 'gender', 'order', 'order_id',
+  'orderid', 'payment', 'credit_card',
+]
+```
+
+These fields are replaced with `"********"` before sending.
+
+## Location Detection
+
+The tracker derives country from the browser's timezone:
+
+```javascript
+// From middleware/src/index.js
+function getCountryAndLocale() {
+  let country, locale;
+  try {
+    const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    country = timezones[timezone]; // Maps timezone to country code
+    locale = navigator.languages && navigator.languages.length
+      ? navigator.languages[0]
+      : navigator.language
+  } catch (error) {
+    // ignore error
+  }
+  return { country, locale };
+}
+```
+
+<Note>
+  This approach is privacy-friendly as it doesn't require IP geolocation or third-party services.
+</Note>
+
+## Timing
+
+Page hits include a 300ms delay to accommodate SPA routers:
+
+```javascript
+// Wait for SPA routers to update the URL
+setTimeout(() => {
+  _sendEvent('page_hit', {
+    'user-agent': window.navigator.userAgent,
+    locale,
+    location: country,
+    referrer: document.referrer,
+    pathname: window.location.pathname,
+    href: window.location.href,
+  })
+}, 300)
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Custom Events" icon="bolt" href="/tracking/custom-events">
+    Track custom user interactions
+  </Card>
+  <Card title="Web Vitals" icon="gauge" href="/tracking/web-vitals">
+    Monitor performance metrics
+  </Card>
+</CardGroup>

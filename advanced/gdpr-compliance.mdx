@@ -1,0 +1,546 @@
+---
+title: GDPR Compliance
+description: Guidelines for implementing GDPR-compliant web analytics with Tinybird
+---
+
+## Overview
+
+Tinybird is GDPR compliant as a platform, but **it is your responsibility** to follow GDPR's rules on data collection and consent when implementing your web analytics.
+
+<Warning>
+This guide provides general information about GDPR compliance. It is not legal advice. Consult with a legal professional to ensure your implementation meets all applicable regulations.
+</Warning>
+
+## Tinybird's GDPR Compliance
+
+Tinybird provides a GDPR-compliant infrastructure:
+
+- **Data Processing Agreement (DPA)**: Available for enterprise customers
+- **EU Data Residency**: Host data in EU regions
+- **Data Encryption**: At rest and in transit
+- **Access Controls**: Role-based access and token management
+- **Audit Logs**: Track data access and modifications
+- **Data Deletion**: Tools for right-to-erasure compliance
+
+## Your Responsibilities
+
+As the data controller, you must ensure:
+
+1. **Lawful basis for processing**: Obtain proper consent or legitimate interest
+2. **Transparency**: Inform users about data collection
+3. **User rights**: Enable data access, portability, and deletion
+4. **Data minimization**: Only collect necessary data
+5. **Security**: Implement appropriate technical measures
+6. **Privacy by design**: Build privacy into your analytics implementation
+
+## Privacy-First Analytics
+
+The Web Analytics Starter Kit is designed with privacy in mind:
+
+### No Personal Identifiable Information (PII)
+
+The default implementation does not collect:
+
+- Names, email addresses, or contact information
+- User IDs or account numbers
+- IP addresses (not stored in datasource)
+- Precise geolocation (only country-level)
+
+### What is Collected
+
+```typescript
+// Default page_hit event payload
+{
+  "user-agent": "Mozilla/5.0...",        // Browser info
+  "locale": "en-US",                     // Language preference
+  "location": "US",                      // Country (from timezone)
+  "referrer": "https://google.com",     // Traffic source
+  "pathname": "/dashboard",             // Page path
+  "href": "https://app.example.com/dashboard"  // Full URL
+}
+```
+
+### Session Tracking
+
+Sessions are tracked using randomly generated UUIDs:
+
+```javascript
+// Generated on client-side, not derived from user data
+function _uuidv4() {
+  return ([1e7] + -1e3 + -4e3 + -8e3 + -1e11).replace(/[018]/g, c =>
+    (
+      c ^
+      (crypto.getRandomValues(new Uint8Array(1))[0] & (15 >> (c / 4)))
+    ).toString(16)
+  )
+}
+```
+
+Session IDs:
+- Are random, not derived from user data
+- Expire after 30 minutes of inactivity
+- Can be stored in cookies, localStorage, or sessionStorage
+- Can be disabled if needed
+
+## Cookie Consent
+
+### Cookie Usage
+
+By default, the tracker uses a cookie to maintain session continuity:
+
+- **Cookie name**: `session-id`
+- **Expiration**: 30 minutes
+- **Purpose**: Session tracking
+- **Scope**: First-party
+
+### Cookie-Free Alternatives
+
+Use `sessionStorage` or `localStorage` instead of cookies:
+
+```html
+<script
+  defer
+  src="https://unpkg.com/@tinybirdco/flock.js"
+  data-token="YOUR_TRACKER_TOKEN"
+  data-storage="sessionStorage"
+></script>
+```
+
+<ParamField path="data-storage" type="string" default="cookie">
+  Storage method for session IDs: `cookie`, `localStorage`, or `sessionStorage`
+</ParamField>
+
+### Implementing Consent
+
+Only load the tracking script after obtaining consent:
+
+```html
+<script>
+  // Check if user has consented
+  const hasConsent = localStorage.getItem('analytics-consent') === 'true';
+  
+  if (hasConsent) {
+    // Load tracking script
+    const script = document.createElement('script');
+    script.src = 'https://unpkg.com/@tinybirdco/flock.js';
+    script.setAttribute('data-token', 'YOUR_TRACKER_TOKEN');
+    document.head.appendChild(script);
+  }
+</script>
+```
+
+### Consent Management Platform Integration
+
+#### CookieBot Example
+
+```html
+<script id="Cookiebot" src="https://consent.cookiebot.com/uc.js" data-cbid="YOUR-CBID" type="text/javascript" async></script>
+
+<script>
+  window.addEventListener('CookiebotOnAccept', function (e) {
+    if (Cookiebot.consent.statistics) {
+      // User accepted analytics cookies
+      const script = document.createElement('script');
+      script.src = 'https://unpkg.com/@tinybirdco/flock.js';
+      script.setAttribute('data-token', 'YOUR_TRACKER_TOKEN');
+      document.head.appendChild(script);
+    }
+  }, false);
+</script>
+```
+
+#### OneTrust Example
+
+```html
+<script>
+  function OptanonWrapper() {
+    OneTrust.OnConsentChanged(function() {
+      const activeGroups = OnetrustActiveGroups;
+      
+      // Check if analytics category is accepted
+      if (activeGroups.indexOf('C0002') > -1) {
+        const script = document.createElement('script');
+        script.src = 'https://unpkg.com/@tinybirdco/flock.js';
+        script.setAttribute('data-token', 'YOUR_TRACKER_TOKEN');
+        document.head.appendChild(script);
+      }
+    });
+  }
+</script>
+```
+
+## Data Minimization
+
+### Avoid Collecting Sensitive Data
+
+The tracker automatically masks sensitive fields:
+
+```javascript
+const attributesToMask = [
+  'username', 'user', 'user_id', 'userid',
+  'password', 'pass', 'pin', 'passcode',
+  'token', 'api_token',
+  'email', 'address', 'phone',
+  'sex', 'gender',
+  'order', 'order_id', 'orderid',
+  'payment', 'credit_card',
+];
+```
+
+Masked values are replaced with `"********"` before sending.
+
+### Custom Attribute Guidelines
+
+<Check>
+**Do**: Use non-identifying attributes like feature flags, app version, or tier
+</Check>
+
+<Check>
+**Do**: Use aggregate categories instead of specific identifiers
+</Check>
+
+<Warning>
+**Don't**: Include user emails, names, or account numbers in custom attributes
+</Warning>
+
+<Warning>
+**Don't**: Track sensitive pages (account settings, payment forms, etc.) without additional safeguards
+</Warning>
+
+### URL Sanitization
+
+Sanitize URLs that might contain sensitive data:
+
+```javascript
+// Before tracking
+window.addEventListener('beforeunload', function() {
+  const url = new URL(window.location.href);
+  
+  // Remove query parameters
+  const sanitizedUrl = url.origin + url.pathname;
+  
+  // Or remove specific sensitive params
+  url.searchParams.delete('token');
+  url.searchParams.delete('email');
+  
+  // Track with sanitized URL
+  // (implementation depends on your setup)
+});
+```
+
+## Right to Access (Subject Access Request)
+
+### Querying User Data
+
+If a user requests their data, query by session ID:
+
+```sql
+SELECT
+  timestamp,
+  action,
+  payload
+FROM analytics_events
+WHERE session_id = 'USER_SESSION_ID'
+ORDER BY timestamp DESC
+```
+
+### Multi-Tenant Access
+
+For multi-tenant setups, filter by tenant and domain:
+
+```sql
+SELECT
+  timestamp,
+  session_id,
+  action,
+  payload
+FROM analytics_events
+WHERE tenant_id = 'USER_TENANT_ID'
+  AND domain = 'USER_DOMAIN'
+  AND timestamp >= now() - interval 30 day
+ORDER BY timestamp DESC
+```
+
+## Right to Erasure (Right to be Forgotten)
+
+### Deleting User Data
+
+Delete specific session data:
+
+```sql
+ALTER TABLE analytics_events
+DELETE WHERE session_id = 'USER_SESSION_ID'
+```
+
+<Info>
+ClickHouse processes DELETE operations asynchronously. Data is marked for deletion and removed during the next merge.
+</Info>
+
+### Automated Deletion
+
+Set up a TTL policy for automatic data deletion:
+
+```sql
+ALTER TABLE analytics_events
+MODIFY TTL timestamp + INTERVAL 90 DAY
+```
+
+This automatically deletes data older than 90 days.
+
+### Deletion API Endpoint
+
+Create an endpoint for handling deletion requests:
+
+```typescript
+// app/api/gdpr/delete/route.ts
+import { NextRequest, NextResponse } from 'next/server';
+
+export async function POST(request: NextRequest) {
+  const { session_id } = await request.json();
+  
+  // Validate session_id
+  if (!session_id || typeof session_id !== 'string') {
+    return NextResponse.json(
+      { error: 'Invalid session_id' },
+      { status: 400 }
+    );
+  }
+
+  // Execute deletion query
+  const response = await fetch(
+    'https://api.tinybird.co/v0/sql',
+    {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${process.env.TINYBIRD_ADMIN_TOKEN}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        q: `ALTER TABLE analytics_events DELETE WHERE session_id = '${session_id}'`
+      }),
+    }
+  );
+
+  if (!response.ok) {
+    return NextResponse.json(
+      { error: 'Failed to delete data' },
+      { status: 500 }
+    );
+  }
+
+  return NextResponse.json({ success: true });
+}
+```
+
+## Data Retention
+
+### Setting Retention Policies
+
+Configure automatic data deletion based on age:
+
+```typescript
+export const analyticsEvents = defineDatasource("analytics_events", {
+  schema: {
+    timestamp: t.dateTime(),
+    // ... other fields
+  },
+  engine: engine.mergeTree({
+    partitionKey: "toYYYYMM(timestamp)",
+    sortingKey: ["tenant_id", "domain", "timestamp"],
+    ttl: {
+      expression: "timestamp + INTERVAL 90 DAY",
+    },
+  }),
+});
+```
+
+### Manual Data Cleanup
+
+Schedule periodic cleanups for old data:
+
+```sql
+-- Delete data older than 90 days
+ALTER TABLE analytics_events
+DELETE WHERE timestamp < now() - interval 90 day
+```
+
+## Proxy Setup for Privacy
+
+Route analytics through your own domain:
+
+```html
+<script
+  defer
+  src="https://unpkg.com/@tinybirdco/flock.js"
+  data-token="YOUR_TRACKER_TOKEN"
+  data-proxy="https://analytics.yourdomain.com"
+></script>
+```
+
+Benefits:
+- First-party context (better for cookies)
+- Harder for ad blockers to identify
+- Full control over data flow
+
+See [Proxy Setup](/advanced/proxy-setup) for implementation details.
+
+## Privacy Policy
+
+### Required Disclosures
+
+Your privacy policy should include:
+
+1. **What data is collected**
+   - Page views and navigation
+   - Browser and device information
+   - Geographic location (country-level)
+   - Referrer information
+
+2. **How data is used**
+   - Improve user experience
+   - Analyze traffic patterns
+   - Measure feature adoption
+
+3. **Data retention period**
+   - How long data is stored
+   - Automatic deletion policies
+
+4. **User rights**
+   - Access their data
+   - Request deletion
+   - Opt out of tracking
+
+5. **Data sharing**
+   - Third-party processors (Tinybird)
+   - Data Processing Agreement
+
+6. **Contact information**
+   - How to exercise rights
+   - Data Protection Officer (if applicable)
+
+### Example Privacy Policy Section
+
+```markdown
+## Analytics and Cookies
+
+We use privacy-friendly analytics to understand how visitors use our website.
+
+**Data Collected:**
+- Pages visited and time spent
+- Browser type and device information
+- Country of origin (derived from timezone)
+- Referring website
+
+We do NOT collect:
+- IP addresses
+- Personal identifiable information
+- Precise geolocation
+- Cross-site tracking data
+
+**Your Rights:**
+- Access your analytics data
+- Request deletion of your data
+- Opt out of tracking
+
+Contact privacy@yourcompany.com to exercise these rights.
+
+**Data Storage:**
+Analytics data is stored for 90 days and then automatically deleted.
+Data is processed by Tinybird (our analytics provider) in accordance
+with their Data Processing Agreement.
+```
+
+## Opt-Out Implementation
+
+Provide users with an opt-out mechanism:
+
+```html
+<!-- Opt-out page -->
+<div id="analytics-opt-out">
+  <h2>Analytics Opt-Out</h2>
+  <p id="status">Analytics tracking is currently enabled.</p>
+  <button id="toggle-tracking">Opt Out</button>
+</div>
+
+<script>
+  const OPTOUT_KEY = 'analytics-optout';
+  const statusEl = document.getElementById('status');
+  const buttonEl = document.getElementById('toggle-tracking');
+  
+  function updateStatus() {
+    const isOptedOut = localStorage.getItem(OPTOUT_KEY) === 'true';
+    
+    if (isOptedOut) {
+      statusEl.textContent = 'You have opted out of analytics tracking.';
+      buttonEl.textContent = 'Opt In';
+    } else {
+      statusEl.textContent = 'Analytics tracking is currently enabled.';
+      buttonEl.textContent = 'Opt Out';
+    }
+  }
+  
+  buttonEl.addEventListener('click', function() {
+    const isOptedOut = localStorage.getItem(OPTOUT_KEY) === 'true';
+    localStorage.setItem(OPTOUT_KEY, isOptedOut ? 'false' : 'true');
+    updateStatus();
+    
+    // Reload to apply changes
+    window.location.reload();
+  });
+  
+  updateStatus();
+</script>
+```
+
+Check opt-out before loading tracker:
+
+```html
+<script>
+  if (localStorage.getItem('analytics-optout') !== 'true') {
+    const script = document.createElement('script');
+    script.src = 'https://unpkg.com/@tinybirdco/flock.js';
+    script.setAttribute('data-token', 'YOUR_TRACKER_TOKEN');
+    document.head.appendChild(script);
+  }
+</script>
+```
+
+## Do Not Track
+
+Respect the Do Not Track browser setting:
+
+```html
+<script>
+  // Check DNT setting
+  const dnt = navigator.doNotTrack || window.doNotTrack || navigator.msDoNotTrack;
+  const doNotTrack = dnt === '1' || dnt === 'yes';
+  
+  if (!doNotTrack && localStorage.getItem('analytics-optout') !== 'true') {
+    const script = document.createElement('script');
+    script.src = 'https://unpkg.com/@tinybirdco/flock.js';
+    script.setAttribute('data-token', 'YOUR_TRACKER_TOKEN');
+    document.head.appendChild(script);
+  }
+</script>
+```
+
+## Checklist
+
+<Check>Update privacy policy to reflect analytics collection</Check>
+<Check>Implement cookie consent mechanism</Check>
+<Check>Set up data retention/TTL policies</Check>
+<Check>Create data deletion endpoint for GDPR requests</Check>
+<Check>Avoid collecting PII in custom attributes</Check>
+<Check>Provide opt-out mechanism</Check>
+<Check>Respect Do Not Track setting</Check>
+<Check>Sign Data Processing Agreement with Tinybird (if applicable)</Check>
+<Check>Document data flows and processing activities</Check>
+<Check>Test data access and deletion procedures</Check>
+
+## Additional Resources
+
+- [Tinybird Security & Compliance](https://www.tinybird.co/security)
+- [GDPR Official Text](https://gdpr-info.eu/)
+- [ICO Guide to GDPR](https://ico.org.uk/for-organisations/guide-to-data-protection/guide-to-the-general-data-protection-regulation-gdpr/)
+- [Proxy Setup](/advanced/proxy-setup)
+- [Custom Attributes](/advanced/custom-attributes)

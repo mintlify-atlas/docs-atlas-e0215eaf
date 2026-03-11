@@ -1,0 +1,609 @@
+---
+title: Local Development
+description: Set up and develop the Tinybird Web Analytics Starter Kit locally
+---
+
+## Overview
+
+This guide covers local development for both the Tinybird data project and the analytics dashboard. You'll learn how to set up your environment, make changes, and test everything locally before deploying to production.
+
+## Prerequisites
+
+- [Node.js](https://nodejs.org/) 18+ and pnpm installed
+- A [Tinybird account](https://www.tinybird.co/) and workspace
+- Git for cloning the repository
+
+## Repository Structure
+
+```
+web-analytics-starter-kit/
+├── tinybird/              # Tinybird data project
+│   ├── src/
+│   │   ├── client.ts      # Tinybird client configuration
+│   │   ├── datasources.ts # Data source definitions
+│   │   ├── endpoints.ts   # API endpoint definitions
+│   │   └── ...
+│   ├── tinybird.json      # SDK configuration
+│   └── package.json
+├── dashboard/             # Next.js analytics dashboard
+│   ├── app/
+│   ├── components/
+│   ├── lib/
+│   └── package.json
+└── middleware/            # Proxy server implementation
+    └── api/
+        └── tracking.js    # Vercel edge function for proxying
+```
+
+## Tinybird Data Project Setup
+
+The Tinybird project contains all your data sources, pipes, and endpoints defined using the [Tinybird SDK](https://www.npmjs.com/package/@tinybirdco/sdk).
+
+### Initial Setup
+
+1. **Clone the repository**:
+
+```bash
+git clone https://github.com/tinybirdco/web-analytics-starter-kit
+cd web-analytics-starter-kit/tinybird
+```
+
+2. **Install dependencies**:
+
+```bash
+pnpm install
+```
+
+3. **Authenticate with Tinybird**:
+
+```bash
+pnpm login
+# or
+npx tinybird login
+```
+
+This opens a browser window for authentication and creates a `.tinybird` file with your credentials.
+
+4. **Configure environment variables**:
+
+Create a `.env.local` file:
+
+```bash
+TINYBIRD_TOKEN=p.your_admin_token_here
+TINYBIRD_HOST=https://api.tinybird.co
+```
+
+<Info>
+You can find your admin token at [cloud.tinybird.co/tokens](https://cloud.tinybird.co/tokens)
+</Info>
+
+For **US East region**:
+
+```bash
+TINYBIRD_HOST=https://api.us-east.tinybird.co
+```
+
+### Development Workflow
+
+#### Development Mode (Branch)
+
+Start development mode to automatically sync changes to a Tinybird branch:
+
+```bash
+pnpm dev
+```
+
+This command:
+- Creates a development branch (if it doesn't exist)
+- Watches for file changes
+- Automatically syncs changes to Tinybird
+- Provides a live preview URL
+
+<Tip>
+Use branches for development to avoid affecting production data and endpoints.
+</Tip>
+
+#### Manual Build
+
+Build and push changes to a branch:
+
+```bash
+pnpm build
+```
+
+#### Deploy to Production
+
+Deploy changes to the main workspace:
+
+```bash
+pnpm deploy
+```
+
+<Warning>
+This deploys to production. Make sure you've tested your changes in a branch first!
+</Warning>
+
+#### Preview Changes
+
+Preview changes without deploying:
+
+```bash
+pnpm preview
+```
+
+### Project Configuration
+
+The `tinybird.json` file configures the SDK:
+
+```json
+{
+  "include": [
+    "src/client.ts",
+    "src/datasources.ts",
+    "src/endpoints.ts",
+    "src/materializations.ts",
+    "src/pipes.ts",
+    "src/tokens.ts",
+    "src/copies.ts",
+    "src/web-vitals.ts"
+  ],
+  "token": "${TINYBIRD_TOKEN}",
+  "baseUrl": "${TINYBIRD_HOST}",
+  "devMode": "branch"
+}
+```
+
+<ParamField path="include" type="array">
+  Files to include in the build
+</ParamField>
+
+<ParamField path="token" type="string">
+  Admin token for authentication (from environment variable)
+</ParamField>
+
+<ParamField path="baseUrl" type="string">
+  Tinybird API URL (from environment variable)
+</ParamField>
+
+<ParamField path="devMode" type="string">
+  Development mode: `branch` creates isolated dev environments
+</ParamField>
+
+### Making Changes
+
+#### Adding a New Endpoint
+
+Create a new endpoint in `src/endpoints.ts`:
+
+```typescript
+export const myCustomEndpoint = defineEndpoint("my_custom_endpoint", {
+  description: "My custom analytics endpoint",
+  tokens: [{ token: dashboardToken, scope: "READ" }],
+  nodes: [
+    node({
+      name: "query",
+      sql: `
+        SELECT
+          toDate(timestamp) as date,
+          count() as total_events
+        FROM analytics_events
+        WHERE timestamp >= {{ DateTime(date_from) }}
+          AND timestamp < {{ DateTime(date_to) }}
+        GROUP BY date
+        ORDER BY date DESC
+      `,
+    }),
+  ],
+  params: {
+    date_from: p.dateTime().describe("Start date"),
+    date_to: p.dateTime().describe("End date"),
+  },
+  output: {
+    date: t.date(),
+    total_events: t.uint64(),
+  },
+});
+```
+
+The changes will automatically sync if you're running `pnpm dev`.
+
+#### Modifying a Data Source
+
+Edit `src/datasources.ts` to modify schema or engine settings:
+
+```typescript
+export const analyticsEvents = defineDatasource("analytics_events", {
+  schema: {
+    timestamp: t.dateTime(),
+    // Add a new field
+    custom_field: t.string().default(""),
+    // ... other fields
+  },
+  engine: engine.mergeTree({
+    partitionKey: "toYYYYMM(timestamp)",
+    sortingKey: ["tenant_id", "domain", "timestamp"],
+  }),
+});
+```
+
+<Warning>
+Changing data source schemas requires careful migration. Test thoroughly in a branch.
+</Warning>
+
+### Using Tinybird Local
+
+For complete local development without cloud dependencies, use [Tinybird Local](https://www.tinybird.co/docs/cli/local-container):
+
+```bash
+# Start local Tinybird instance
+tinybird local start
+
+# Update environment to use local instance
+export TINYBIRD_HOST=http://localhost:7181
+
+# Deploy to local instance
+pnpm deploy
+```
+
+Local instance runs on `http://localhost:7181` and includes:
+- Local ClickHouse database
+- Tinybird API
+- Admin UI
+
+## Dashboard Development
+
+The dashboard is a Next.js application that visualizes your analytics data.
+
+### Setup
+
+1. **Navigate to dashboard directory**:
+
+```bash
+cd ../dashboard
+```
+
+2. **Install dependencies**:
+
+```bash
+pnpm install
+```
+
+3. **Configure environment**:
+
+Copy `.env.example` to `.env` or `.env.local`:
+
+```bash
+cp .env.example .env.local
+```
+
+Edit `.env.local`:
+
+```bash
+# Tinybird Configuration (server-only, required)
+TINYBIRD_TOKEN=your-dashboard-token
+TINYBIRD_HOST=https://api.tinybird.co
+
+# Dashboard URL (public)
+NEXT_PUBLIC_TINYBIRD_DASHBOARD_URL=http://localhost:3000
+
+# Tracker token for analytics (public, optional)
+NEXT_PUBLIC_TINYBIRD_TRACKER_TOKEN=
+
+# Dashboard Basic Auth (server-only, defaults to admin/admin if not set)
+DASHBOARD_USERNAME=admin
+DASHBOARD_PASSWORD=changeme
+
+# Optional: Set to "true" to disable auth during development
+DISABLE_AUTH=true
+
+# Optional: AI Chat
+NEXT_PUBLIC_ASK_TINYBIRD_ENDPOINT="https://ask-tb.tinybird.live/api/chat"
+```
+
+<Info>
+**Dashboard token** (not tracker token) has READ access to all endpoints. Get it from [cloud.tinybird.co/tokens](https://cloud.tinybird.co/tokens).
+</Info>
+
+### Development Server
+
+Start the development server:
+
+```bash
+pnpm dev
+```
+
+The dashboard runs at [http://localhost:3000](http://localhost:3000)
+
+### Authentication
+
+The dashboard includes built-in authentication:
+
+- **Default credentials**: `admin` / `admin`
+- **Customize**: Set `DASHBOARD_USERNAME` and `DASHBOARD_PASSWORD`
+- **Disable for dev**: Set `DISABLE_AUTH=true`
+
+### Tech Stack
+
+- **[Next.js](https://nextjs.org/)** - React framework with App Router
+- **[Tailwind CSS](https://tailwindcss.com/)** - Utility-first CSS
+- **[SWR](https://swr.vercel.app/)** - Data fetching and caching
+- **[Recharts](https://recharts.org/)** - Chart library
+
+### Project Structure
+
+```
+dashboard/
+├── app/                   # Next.js App Router
+│   ├── api/              # API routes
+│   │   ├── endpoints/    # Proxy to Tinybird endpoints
+│   │   ├── auth/         # Authentication endpoints
+│   │   └── config/       # Configuration endpoints
+│   ├── page.tsx          # Main dashboard page
+│   └── layout.tsx        # Root layout
+├── components/            # React components
+│   ├── charts/           # Chart components
+│   ├── stats/            # Stat cards
+│   └── ui/               # UI primitives
+├── lib/                   # Utilities
+│   ├── api.ts            # API client
+│   ├── hooks/            # Custom React hooks
+│   └── types/            # TypeScript types
+└── public/               # Static assets
+```
+
+### Making Changes
+
+#### Adding a New Chart
+
+Create a component in `components/charts/`:
+
+```tsx
+// components/charts/CustomChart.tsx
+import { useEndpoint } from '@/lib/hooks/use-endpoint';
+import { LineChart, Line, XAxis, YAxis, Tooltip } from 'recharts';
+
+export function CustomChart() {
+  const { data, error, isLoading } = useEndpoint('my_custom_endpoint', {
+    date_from: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString(),
+    date_to: new Date().toISOString(),
+  });
+
+  if (isLoading) return <div>Loading...</div>;
+  if (error) return <div>Error loading data</div>;
+
+  return (
+    <LineChart width={600} height={300} data={data}>
+      <XAxis dataKey="date" />
+      <YAxis />
+      <Tooltip />
+      <Line type="monotone" dataKey="total_events" stroke="#8884d8" />
+    </LineChart>
+  );
+}
+```
+
+#### Using Custom Endpoints
+
+The `useEndpoint` hook fetches data from your Tinybird endpoints:
+
+```typescript
+import { useEndpoint } from '@/lib/hooks/use-endpoint';
+
+const { data, error, isLoading } = useEndpoint('endpoint_name', {
+  param1: 'value1',
+  param2: 'value2',
+});
+```
+
+Data is automatically cached and revalidated using SWR.
+
+### Using Tinybird Local with Dashboard
+
+To develop against a local Tinybird instance:
+
+```bash
+# In .env.local
+TINYBIRD_HOST=http://localhost:7181
+```
+
+Then start the dashboard:
+
+```bash
+pnpm dev
+```
+
+## Testing Locally
+
+### Test Tracking Script
+
+Create a simple HTML page to test tracking:
+
+```html
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Analytics Test</title>
+  <script
+    defer
+    src="https://unpkg.com/@tinybirdco/flock.js"
+    data-token="YOUR_TRACKER_TOKEN"
+    data-host="http://localhost:7181"
+  ></script>
+</head>
+<body>
+  <h1>Analytics Test Page</h1>
+  <button onclick="Tinybird.trackEvent('button_click', { button: 'test' })">
+    Track Event
+  </button>
+</body>
+</html>
+```
+
+Open in a browser and check your Tinybird workspace for events.
+
+### Query Data
+
+Query your local or development branch:
+
+```bash
+# Using Tinybird CLI
+tinybird sql "SELECT count() FROM analytics_events"
+
+# Or via API
+curl -H "Authorization: Bearer YOUR_TOKEN" \
+  "https://api.tinybird.co/v0/sql?q=SELECT%20count()%20FROM%20analytics_events"
+```
+
+## Production Build
+
+### Build Dashboard
+
+```bash
+cd dashboard
+pnpm build
+```
+
+Test the production build locally:
+
+```bash
+pnpm start
+```
+
+### Deploy Dashboard
+
+Deploy to Vercel:
+
+```bash
+vercel deploy
+```
+
+Or use the Vercel GitHub integration for automatic deployments.
+
+## Common Development Tasks
+
+### Add a Custom Event Type
+
+1. Track the event from your app:
+
+```javascript
+Tinybird.trackEvent('signup_completed', {
+  plan: 'pro',
+  trial: false,
+});
+```
+
+2. Create an endpoint to query it:
+
+```typescript
+export const signups = defineEndpoint("signups", {
+  nodes: [
+    node({
+      sql: `
+        SELECT
+          toDate(timestamp) as date,
+          JSONExtractString(payload, 'plan') as plan,
+          count() as signups
+        FROM analytics_events
+        WHERE action = 'signup_completed'
+          AND timestamp >= {{ DateTime(date_from) }}
+        GROUP BY date, plan
+        ORDER BY date DESC
+      `,
+    }),
+  ],
+  // ... params and output
+});
+```
+
+3. Add a chart in the dashboard
+
+### Test Multi-Tenancy
+
+Track events with tenant IDs:
+
+```html
+<script
+  src="https://unpkg.com/@tinybirdco/flock.js"
+  data-token="YOUR_TRACKER_TOKEN"
+  data-tenant-id="test-tenant-1"
+  data-domain="test.local"
+></script>
+```
+
+Query by tenant:
+
+```bash
+tinybird sql "SELECT count() FROM analytics_events WHERE tenant_id = 'test-tenant-1'"
+```
+
+### Debug Authentication Issues
+
+Enable authentication logs:
+
+```typescript
+// middleware.ts
+console.log('Auth check:', {
+  pathname: request.nextUrl.pathname,
+  hasAuth: !!request.headers.get('authorization'),
+});
+```
+
+## Troubleshooting
+
+### "Token not found" Error
+
+Ensure your `.env.local` file has the correct token:
+
+```bash
+TINYBIRD_TOKEN=p.your_actual_token_here
+```
+
+### "Connection refused" with Tinybird Local
+
+Check if Tinybird Local is running:
+
+```bash
+tinybird local status
+
+# If not running:
+tinybird local start
+```
+
+### Dashboard shows "No data"
+
+Verify:
+1. Tracking script is sending events
+2. Dashboard token has correct permissions
+3. Date range includes data
+4. Check browser console for API errors
+
+### Changes not syncing
+
+Restart dev mode:
+
+```bash
+# Stop (Ctrl+C)
+# Start again
+pnpm dev
+```
+
+Or manually push:
+
+```bash
+pnpm build
+```
+
+## Best Practices
+
+<Check>Use branches for development, deploy to production only after testing</Check>
+<Check>Keep `.env.local` in `.gitignore` - never commit tokens</Check>
+<Check>Use Tinybird Local for testing schema changes</Check>
+<Check>Test with realistic data volumes before deploying</Check>
+<Check>Document custom endpoints and their parameters</Check>
+
+## Related Resources
+
+- [Tinybird CLI Documentation](https://www.tinybird.co/docs/cli/overview)
+- [Tinybird SDK Documentation](https://www.npmjs.com/package/@tinybirdco/sdk)
+- [Next.js Documentation](https://nextjs.org/docs)
+- [Dashboard Deployment Guide](/dashboard/deployment)

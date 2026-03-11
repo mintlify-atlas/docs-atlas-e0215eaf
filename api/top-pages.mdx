@@ -1,0 +1,196 @@
+---
+title: 'Top Pages'
+description: 'Get the most visited pages with optional previous period comparison'
+---
+
+## Overview
+
+The `top_pages` endpoint returns the most visited pages ranked by number of visits. It supports pagination and optional comparison with the previous period.
+
+## Endpoint
+
+```
+GET https://api.tinybird.co/v0/pipes/top_pages.json
+```
+
+## Parameters
+
+<ParamField query="date_from" type="string" optional>
+  Start date (YYYY-MM-DD format). Defaults to 7 days ago.
+</ParamField>
+
+<ParamField query="date_to" type="string" optional>
+  End date (YYYY-MM-DD format). Defaults to today.
+</ParamField>
+
+<ParamField query="tenant_id" type="string" optional>
+  Filter by tenant ID
+</ParamField>
+
+<ParamField query="domain" type="string" optional>
+  Filter by domain
+</ParamField>
+
+<ParamField query="include_previous_period" type="string" optional>
+  Set to "true" to include previous period comparison and growth percentages
+</ParamField>
+
+<ParamField query="skip" type="int32" optional default="0">
+  Skip for pagination (offset)
+</ParamField>
+
+<ParamField query="limit" type="int32" optional default="50">
+  Limit for pagination (max results)
+</ParamField>
+
+## SQL Query
+
+The endpoint aggregates page data from `analytics_pages_mv`:
+
+```sql
+SELECT
+    pathname,
+    uniqMerge(visits) as current_visits,
+    countMerge(hits) as current_hits
+FROM analytics_pages_mv
+WHERE date >= (SELECT current_start FROM date_calculations)
+    AND date <= (SELECT current_end FROM date_calculations)
+    {% if defined(tenant_id) %}
+    AND tenant_id = {{ String(tenant_id, description="Filter by tenant ID") }}
+    {% end %}
+    {% if defined(domain) %}
+    AND domain = {{ String(domain, description="Filter by domain") }}
+    {% end %}
+GROUP BY pathname
+```
+
+## Response
+
+<ResponseField name="pathname" type="string" required>
+  The page pathname (URL path)
+</ResponseField>
+
+<ResponseField name="visits" type="uint64" required>
+  Number of unique visits to this page
+</ResponseField>
+
+<ResponseField name="hits" type="uint64" required>
+  Total number of pageviews for this page
+</ResponseField>
+
+<ResponseField name="previous_visits" type="uint64">
+  Previous period visits (only when include_previous_period=true)
+</ResponseField>
+
+<ResponseField name="previous_hits" type="uint64">
+  Previous period pageviews (only when include_previous_period=true)
+</ResponseField>
+
+<ResponseField name="visits_growth_percentage" type="float64">
+  Percentage change in visits (only when include_previous_period=true)
+</ResponseField>
+
+<ResponseField name="hits_growth_percentage" type="float64">
+  Percentage change in pageviews (only when include_previous_period=true)
+</ResponseField>
+
+## TypeScript Usage
+
+```typescript
+import { Tinybird } from '@tinybirdco/sdk';
+import type { TopPagesParams, TopPagesOutput } from './endpoints';
+
+const tb = new Tinybird({ token: process.env.TINYBIRD_TOKEN });
+
+// Get top 50 pages (default)
+const result = await tb.exec<TopPagesOutput>('top_pages');
+result.data.forEach(page => {
+  console.log(`${page.pathname}: ${page.visits} visits, ${page.hits} pageviews`);
+});
+
+// Get top pages for a specific date range
+const params: TopPagesParams = {
+  date_from: '2024-01-01',
+  date_to: '2024-01-31',
+  domain: 'example.com',
+  limit: 10
+};
+const rangeResult = await tb.exec<TopPagesOutput>('top_pages', params);
+
+// Get top pages with previous period comparison
+const comparisonParams: TopPagesParams = {
+  date_from: '2024-01-01',
+  date_to: '2024-01-07',
+  include_previous_period: 'true',
+  limit: 20
+};
+const comparisonResult = await tb.exec<TopPagesOutput>('top_pages', comparisonParams);
+comparisonResult.data.forEach(page => {
+  console.log(`${page.pathname}: ${page.visits} visits (${page.visits_growth_percentage}% growth)`);
+});
+
+// Paginate through results
+const page1Params: TopPagesParams = {
+  skip: 0,
+  limit: 10
+};
+const page2Params: TopPagesParams = {
+  skip: 10,
+  limit: 10
+};
+const page1 = await tb.exec<TopPagesOutput>('top_pages', page1Params);
+const page2 = await tb.exec<TopPagesOutput>('top_pages', page2Params);
+```
+
+## Example Response
+
+### Without Previous Period
+
+```json
+{
+  "data": [
+    {
+      "pathname": "/",
+      "visits": 8234,
+      "hits": 12456
+    },
+    {
+      "pathname": "/docs",
+      "visits": 3421,
+      "hits": 8932
+    },
+    {
+      "pathname": "/blog",
+      "visits": 2145,
+      "hits": 3876
+    }
+  ]
+}
+```
+
+### With Previous Period
+
+```json
+{
+  "data": [
+    {
+      "pathname": "/",
+      "visits": 8234,
+      "hits": 12456,
+      "previous_visits": 7521,
+      "previous_hits": 11234,
+      "visits_growth_percentage": 9.48,
+      "hits_growth_percentage": 10.88
+    },
+    {
+      "pathname": "/docs",
+      "visits": 3421,
+      "hits": 8932,
+      "previous_visits": 2987,
+      "previous_hits": 7654,
+      "visits_growth_percentage": 14.53,
+      "hits_growth_percentage": 16.70
+    }
+  ]
+}
+```

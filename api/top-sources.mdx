@@ -1,0 +1,208 @@
+---
+title: 'Top Sources'
+description: 'Get top traffic sources ranked by visits with optional previous period comparison'
+---
+
+## Overview
+
+The `top_sources` endpoint returns the top traffic referrers ranked by number of visits. It supports pagination and optional comparison with the previous period.
+
+## Endpoint
+
+```
+GET https://api.tinybird.co/v0/pipes/top_sources.json
+```
+
+## Parameters
+
+<ParamField query="date_from" type="string" optional>
+  Start date (YYYY-MM-DD format). Defaults to 7 days ago.
+</ParamField>
+
+<ParamField query="date_to" type="string" optional>
+  End date (YYYY-MM-DD format). Defaults to today.
+</ParamField>
+
+<ParamField query="tenant_id" type="string" optional>
+  Filter by tenant ID
+</ParamField>
+
+<ParamField query="domain" type="string" optional>
+  Filter by domain
+</ParamField>
+
+<ParamField query="include_previous_period" type="string" optional>
+  Set to "true" to include previous period comparison and growth percentages
+</ParamField>
+
+<ParamField query="skip" type="int32" optional default="0">
+  Skip for pagination (offset)
+</ParamField>
+
+<ParamField query="limit" type="int32" optional default="50">
+  Limit for pagination (max results)
+</ParamField>
+
+## SQL Query
+
+The endpoint aggregates referrer data from `analytics_sources_mv`:
+
+```sql
+SELECT
+    domainWithoutWWW(referrer) as referrer,
+    uniqMerge(visits) as current_visits,
+    countMerge(hits) as current_hits
+FROM analytics_sources_mv
+WHERE date >= (SELECT current_start FROM date_calculations)
+    AND date <= (SELECT current_end FROM date_calculations)
+    {% if defined(tenant_id) %}
+    AND tenant_id = {{ String(tenant_id, description="Filter by tenant ID") }}
+    {% end %}
+    {% if defined(domain) %}
+    AND domain = {{ String(domain, description="Filter by domain") }}
+    {% end %}
+GROUP BY referrer
+```
+
+## Response
+
+<ResponseField name="referrer" type="string" required>
+  The referrer domain (without www prefix)
+</ResponseField>
+
+<ResponseField name="visits" type="uint64" required>
+  Number of unique visits from this source
+</ResponseField>
+
+<ResponseField name="hits" type="uint64" required>
+  Total number of pageviews from this source
+</ResponseField>
+
+<ResponseField name="previous_visits" type="uint64">
+  Previous period visits (only when include_previous_period=true)
+</ResponseField>
+
+<ResponseField name="previous_hits" type="uint64">
+  Previous period pageviews (only when include_previous_period=true)
+</ResponseField>
+
+<ResponseField name="visits_growth_percentage" type="float64">
+  Percentage change in visits (only when include_previous_period=true)
+</ResponseField>
+
+<ResponseField name="hits_growth_percentage" type="float64">
+  Percentage change in pageviews (only when include_previous_period=true)
+</ResponseField>
+
+## TypeScript Usage
+
+```typescript
+import { Tinybird } from '@tinybirdco/sdk';
+import type { TopSourcesParams, TopSourcesOutput } from './endpoints';
+
+const tb = new Tinybird({ token: process.env.TINYBIRD_TOKEN });
+
+// Get top 50 traffic sources (default)
+const result = await tb.exec<TopSourcesOutput>('top_sources');
+result.data.forEach(source => {
+  console.log(`${source.referrer}: ${source.visits} visits, ${source.hits} pageviews`);
+});
+
+// Get top sources for a specific date range
+const params: TopSourcesParams = {
+  date_from: '2024-01-01',
+  date_to: '2024-01-31',
+  domain: 'example.com',
+  limit: 10
+};
+const rangeResult = await tb.exec<TopSourcesOutput>('top_sources', params);
+
+// Get top sources with previous period comparison
+const comparisonParams: TopSourcesParams = {
+  date_from: '2024-01-01',
+  date_to: '2024-01-07',
+  include_previous_period: 'true',
+  limit: 20
+};
+const comparisonResult = await tb.exec<TopSourcesOutput>('top_sources', comparisonParams);
+comparisonResult.data.forEach(source => {
+  console.log(`${source.referrer}: ${source.visits} visits (${source.visits_growth_percentage}% growth)`);
+});
+
+// Paginate through results
+const page1Params: TopSourcesParams = {
+  skip: 0,
+  limit: 10
+};
+const page2Params: TopSourcesParams = {
+  skip: 10,
+  limit: 10
+};
+const page1 = await tb.exec<TopSourcesOutput>('top_sources', page1Params);
+const page2 = await tb.exec<TopSourcesOutput>('top_sources', page2Params);
+```
+
+## Example Response
+
+### Without Previous Period
+
+```json
+{
+  "data": [
+    {
+      "referrer": "google.com",
+      "visits": 5234,
+      "hits": 8921
+    },
+    {
+      "referrer": "twitter.com",
+      "visits": 2341,
+      "hits": 4567
+    },
+    {
+      "referrer": "github.com",
+      "visits": 1876,
+      "hits": 3245
+    },
+    {
+      "referrer": "",
+      "visits": 1234,
+      "hits": 2345
+    }
+  ]
+}
+```
+
+### With Previous Period
+
+```json
+{
+  "data": [
+    {
+      "referrer": "google.com",
+      "visits": 5234,
+      "hits": 8921,
+      "previous_visits": 4821,
+      "previous_hits": 8234,
+      "visits_growth_percentage": 8.57,
+      "hits_growth_percentage": 8.34
+    },
+    {
+      "referrer": "twitter.com",
+      "visits": 2341,
+      "hits": 4567,
+      "previous_visits": 1987,
+      "previous_hits": 3876,
+      "visits_growth_percentage": 17.81,
+      "hits_growth_percentage": 17.83
+    }
+  ]
+}
+```
+
+## Notes
+
+- Empty referrer (`""`) indicates direct traffic or traffic without a referrer
+- Referrers are normalized by removing the `www.` prefix
+- Results are ordered by visits in descending order
+- Use pagination parameters for large result sets

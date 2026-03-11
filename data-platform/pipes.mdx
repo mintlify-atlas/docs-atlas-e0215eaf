@@ -1,0 +1,549 @@
+---
+title: 'Pipes'
+description: 'Data transformation and processing pipes in the Web Analytics Starter Kit'
+---
+
+## Overview
+
+Pipes transform raw data from datasources into structured, queryable formats. The Web Analytics Starter Kit uses **internal pipes** for data transformation and **endpoint pipes** for API responses.
+
+<Info>
+This page focuses on the **analytics_hits** internal pipe - the core transformation layer that powers all downstream analytics.
+</Info>
+
+## analytics_hits
+
+The primary transformation pipe that parses raw events and enriches them with device and browser detection.
+
+### Purpose
+
+Transforms raw `analytics_events` into structured hits with:
+- Parsed JSON fields from payload
+- Device type detection (desktop, mobile, bot)
+- Browser identification
+- Domain resolution with fallback logic
+- Flexible filtering capabilities
+
+<CodeGroup>
+```typescript Pipe Definition
+export const analyticsHits = defineEndpoint("analytics_hits", {
+  description: "Parsed page_hit events with browser and device detection logic.",
+  tokens: [{ token: dashboardToken, scope: "READ" }],
+  nodes: [
+    // Node definitions...
+  ],
+  params: {
+    tenant_id: p.string().optional(),
+    domain: p.string().optional(),
+    from_date: p.date().optional(),
+    to_date: p.date().optional(),
+    like_filter: p.string().optional(),
+    limit: p.int32().optional(20),
+    page: p.int32().optional(0),
+  },
+  output: {
+    timestamp: t.dateTime(),
+    action: t.string(),
+    version: t.string(),
+    session_id: t.string(),
+    tenant_id: t.string(),
+    domain: t.string(),
+    location: t.string(),
+    referrer: t.string(),
+    pathname: t.string(),
+    href: t.string(),
+    current_domain: t.string(),
+    device: t.string(),
+    browser: t.string(),
+  },
+});
+```
+</CodeGroup>
+
+---
+
+## Node Architecture
+
+### Node 1: parsed_hits
+
+Extracts and parses fields from the JSON payload.
+
+<CodeGroup>
+```sql SQL Query
+SELECT
+    timestamp,
+    action,
+    version,
+    coalesce(session_id, '0') as session_id,
+    tenant_id,
+    multiIf(
+        domain != '', domain,
+        current_domain != '', current_domain,
+        domain_from_payload
+    ) as domain,
+    JSONExtractString(payload, 'domain') as domain_from_payload,
+    JSONExtractString(payload, 'locale') as locale,
+    JSONExtractString(payload, 'location') as location,
+    JSONExtractString(payload, 'referrer') as referrer,
+    JSONExtractString(payload, 'pathname') as pathname,
+    JSONExtractString(payload, 'href') as href,
+    if(
+        domainWithoutWWW(href) = '' and href is not null and href != '',
+        URLHierarchy(href)[1],
+        domainWithoutWWW(href)
+    ) as current_domain,
+    lower(JSONExtractString(payload, 'user-agent')) as user_agent
+FROM analytics_events
+WHERE action = 'page_hit'
+    {% if defined(tenant_id) %}
+    AND tenant_id = {{ String(tenant_id) }}
+    {% end %}
+    {% if defined(domain) %}
+    AND domain = {{ String(domain) }}
+    {% end %}
+    {% if defined(from_date) %}
+    AND timestamp >= {{ Date(from_date) }}
+    {% end %}
+    {% if defined(to_date) %}
+    AND timestamp <= {{ Date(to_date) }}
+    {% end %}
+    {% if defined(like_filter) %}
+    AND payload like {{ String(like_filter) }}
+    {% end %}
+{% if defined(limit) %}
+    LIMIT {{Int32(limit, 20)}}
+    OFFSET {{Int32(page, 0) * Int32(limit, 20)}}
+{% end %}
+```
+</CodeGroup>
+
+#### Key Transformations
+
+<AccordionGroup>
+  <Accordion title="Domain Resolution Logic" icon="globe">
+    **Multi-tier fallback** ensures domain is always populated:
+    
+    ```sql
+    multiIf(
+        domain != '', domain,                    -- 1. Use domain field
+        current_domain != '', current_domain,    -- 2. Extract from href
+        domain_from_payload                      -- 3. Extract from payload.domain
+    ) as domain
+    ```
+    
+    This handles cases where:
+    - Domain is pre-populated in the event
+    - Domain needs extraction from the full URL
+    - Domain is in the JSON payload
+  </Accordion>
+  
+  <Accordion title="URL Hierarchy Handling" icon="link">
+    **Complex URL parsing** for edge cases:
+    
+    ```sql
+    if(
+        domainWithoutWWW(href) = '' and href is not null and href != '',
+        URLHierarchy(href)[1],  -- Use first hierarchy element
+        domainWithoutWWW(href)  -- Use standard domain extraction
+    ) as current_domain
+    ```
+    
+    <Tip>ClickHouse's `URLHierarchy()` function splits URLs into path components, useful when standard domain extraction fails.</Tip>
+  </Accordion>
+  
+  <Accordion title="Session ID Handling" icon="id-badge">
+    **Null-safe session IDs**:
+    
+    ```sql
+    coalesce(session_id, '0') as session_id
+    ```
+    
+    Ensures session_id is never null for downstream aggregations.
+  </Accordion>
+  
+  <Accordion title="Payload Filtering" icon="filter">
+    **Flexible text search** across payload:
+    
+    ```sql
+    {% if defined(like_filter) %}
+    AND payload like {{ String(like_filter) }}
+    {% end %}
+    ```
+    
+    **Example usage**:
+    - `like_filter: '%utm_campaign%'` - Find UTM campaigns
+    - `like_filter: '%referral%'` - Find referral traffic
+    - `like_filter: '%mobile%'` - Find mobile-specific events
+  </Accordion>
+</AccordionGroup>
+
+---
+
+### Node 2: endpoint
+
+Applies device and browser detection logic to parsed hits.
+
+<CodeGroup>
+```sql Device Detection
+case
+    when match(user_agent, 'wget|ahrefsbot|curl|urllib|bitdiscovery|\+https://|googlebot')
+    then 'bot'
+    when match(user_agent, 'android')
+    then 'mobile-android'
+    when match(user_agent, 'ipad|iphone|ipod')
+    then 'mobile-ios'
+    else 'desktop'
+END as device
+```
+
+```sql Browser Detection
+case
+    when match(user_agent, 'firefox')
+    then 'firefox'
+    when match(user_agent, 'chrome|crios')
+    then 'chrome'
+    when match(user_agent, 'opera')
+    then 'opera'
+    when match(user_agent, 'msie|trident')
+    then 'ie'
+    when match(user_agent, 'iphone|ipad|safari')
+    then 'safari'
+    else 'Unknown'
+END as browser
+```
+</CodeGroup>
+
+#### Detection Strategy
+
+<CardGroup cols={2}>
+  <Card title="Device Detection" icon="mobile">
+    **Priority order**:
+    1. Bot detection (highest priority)
+    2. Android devices
+    3. iOS devices (iPad, iPhone, iPod)
+    4. Desktop (default)
+    
+    <Note>Bot traffic is identified first to filter out non-human visitors</Note>
+  </Card>
+  
+  <Card title="Browser Detection" icon="browser">
+    **Supported browsers**:
+    - Firefox
+    - Chrome (including CriOS for iOS)
+    - Opera
+    - Internet Explorer (MSIE/Trident)
+    - Safari (including iOS)
+    
+    <Tip>Detection uses regex patterns for flexibility across user agent variations</Tip>
+  </Card>
+</CardGroup>
+
+<Warning>
+**User Agent Parsing**: This implementation uses simple regex patterns. For production use cases with detailed analytics, consider more sophisticated user agent parsing libraries.
+</Warning>
+
+---
+
+## Parameters
+
+The analytics_hits pipe accepts flexible parameters for filtering and pagination.
+
+### Filter Parameters
+
+<ParamField path="tenant_id" type="string" optional>
+  Filter events by tenant ID for multi-tenant isolation
+  
+  ```typescript
+  params: { tenant_id: "tenant_123" }
+  ```
+</ParamField>
+
+<ParamField path="domain" type="string" optional>
+  Filter events by specific domain
+  
+  ```typescript
+  params: { domain: "example.com" }
+  ```
+</ParamField>
+
+<ParamField path="from_date" type="Date" optional>
+  Starting date for time-range filtering
+  
+  ```typescript
+  params: { from_date: "2024-01-01" }
+  ```
+</ParamField>
+
+<ParamField path="to_date" type="Date" optional>
+  Ending date for time-range filtering
+  
+  ```typescript
+  params: { to_date: "2024-01-31" }
+  ```
+</ParamField>
+
+<ParamField path="like_filter" type="string" optional>
+  SQL LIKE pattern to filter payload JSON content
+  
+  ```typescript
+  params: { like_filter: "%utm_source%" }
+  ```
+  
+  **Common patterns**:
+  - `"%utm_%"` - Any UTM parameters
+  - `"%referral%"` - Referral traffic
+  - `"%campaign%"` - Campaign tracking
+</ParamField>
+
+### Pagination Parameters
+
+<ParamField path="limit" type="int32" default="20" optional>
+  Maximum number of results to return
+  
+  ```typescript
+  params: { limit: 50 }
+  ```
+</ParamField>
+
+<ParamField path="page" type="int32" default="0" optional>
+  Page number for pagination (0-indexed)
+  
+  ```typescript
+  params: { page: 2, limit: 50 }  // Returns results 100-150
+  ```
+</ParamField>
+
+<Info>
+**Pagination formula**: `OFFSET = page * limit`
+</Info>
+
+---
+
+## Output Schema
+
+The analytics_hits pipe returns enriched hit records:
+
+```typescript Output Type
+type AnalyticsHitsOutput = {
+  timestamp: DateTime;
+  action: string;
+  version: string;
+  session_id: string;
+  tenant_id: string;
+  domain: string;
+  location: string;      // Geographic location (country code)
+  referrer: string;      // Referrer URL
+  pathname: string;      // Page path
+  href: string;          // Full URL
+  current_domain: string; // Extracted domain from href
+  device: string;        // Device type: desktop | mobile-android | mobile-ios | bot
+  browser: string;       // Browser: chrome | firefox | safari | opera | ie | Unknown
+};
+```
+
+### Field Descriptions
+
+<ResponseField name="location" type="string">
+  Two-letter country code (e.g., "US", "GB", "DE")
+  
+  <Note>This field is populated by your event ingestion logic, typically via IP geolocation</Note>
+</ResponseField>
+
+<ResponseField name="device" type="string">
+  Detected device category:
+  - `desktop` - Desktop/laptop computers
+  - `mobile-android` - Android phones/tablets
+  - `mobile-ios` - iPhone, iPad, iPod
+  - `bot` - Automated crawlers and bots
+</ResponseField>
+
+<ResponseField name="browser" type="string">
+  Detected browser:
+  - `chrome` - Google Chrome (including mobile)
+  - `firefox` - Mozilla Firefox
+  - `safari` - Safari (including iOS)
+  - `opera` - Opera browser
+  - `ie` - Internet Explorer / Edge Legacy
+  - `Unknown` - Unrecognized browser
+</ResponseField>
+
+<ResponseField name="current_domain" type="string">
+  Domain extracted from the href field using ClickHouse URL functions
+  
+  **vs. domain field**: current_domain is always computed from the URL, while domain may be pre-populated
+</ResponseField>
+
+---
+
+## Usage in Materialized Views
+
+The analytics_hits pipe serves as the **data source for all materialized views**:
+
+```sql Example: analytics_pages Materialization
+SELECT
+    toDate(timestamp) AS date,
+    tenant_id,
+    domain,
+    device,
+    browser,
+    location,
+    pathname,
+    uniqState(session_id) AS visits,
+    countState() AS hits
+FROM analytics_hits
+GROUP BY date, tenant_id, domain, device, browser, location, pathname
+```
+
+<Info>
+Materialized views read from **analytics_hits** (not directly from analytics_events) to benefit from the parsing and enrichment logic.
+</Info>
+
+---
+
+## Performance Considerations
+
+### Query Optimization
+
+<CardGroup cols={2}>
+  <Card title="Filter Early" icon="filter">
+    Apply `tenant_id` and `domain` filters to leverage the analytics_events sorting key:
+    
+    ```sql
+    WHERE tenant_id = 'x' AND domain = 'y'
+    ```
+  </Card>
+  
+  <Card title="Date Range Queries" icon="calendar">
+    Use date filters to enable partition pruning:
+    
+    ```sql
+    WHERE timestamp >= '2024-01-01' 
+      AND timestamp < '2024-02-01'
+    ```
+  </Card>
+  
+  <Card title="Limit Results" icon="hashtag">
+    Always use pagination to avoid large result sets:
+    
+    ```sql
+    LIMIT 100 OFFSET 0
+    ```
+  </Card>
+  
+  <Card title="Avoid Payload Scanning" icon="magnifying-glass">
+    `like_filter` on payload is expensive - use sparingly and combine with other filters
+  </Card>
+</CardGroup>
+
+### Real-time vs Historical
+
+<Tabs>
+  <Tab title="Real-time Queries">
+    **Use analytics_hits directly** for recent data:
+    
+    ```sql
+    FROM analytics_hits
+    WHERE timestamp >= now() - interval 1 hour
+    ```
+    
+    ✅ Up-to-date data  
+    ✅ Flexible filtering  
+    ⚠️ Higher query cost
+  </Tab>
+  
+  <Tab title="Historical Queries">
+    **Use materialized views** for historical data:
+    
+    ```sql
+    FROM analytics_pages_mv
+    WHERE date >= '2024-01-01'
+    ```
+    
+    ✅ Pre-aggregated  
+    ✅ Fast queries  
+    ⚠️ Limited dimensions
+  </Tab>
+</Tabs>
+
+---
+
+## Type Inference
+
+TypeScript types are automatically inferred:
+
+```typescript Type Exports
+export type AnalyticsHitsParams = InferParams<typeof analyticsHits>;
+export type AnalyticsHitsOutput = InferOutputRow<typeof analyticsHits>;
+```
+
+**Example usage**:
+
+```typescript Using Pipe Types
+import { analyticsHits, type AnalyticsHitsParams } from "./pipes";
+
+const params: AnalyticsHitsParams = {
+  tenant_id: "tenant_123",
+  from_date: new Date("2024-01-01"),
+  to_date: new Date("2024-01-31"),
+  limit: 100,
+};
+
+const results = await analyticsHits.query(params);
+results.data.forEach((hit) => {
+  console.log(hit.device, hit.browser, hit.pathname);
+});
+```
+
+---
+
+## Extending the Pipe
+
+### Adding Custom Detection
+
+Extend device or browser detection for your needs:
+
+```sql Custom Device Categories
+case
+    when match(user_agent, 'wget|ahrefsbot|curl|urllib|bitdiscovery|\+https://|googlebot')
+    then 'bot'
+    when match(user_agent, 'android.*mobile')
+    then 'mobile-android'
+    when match(user_agent, 'android')
+    then 'tablet-android'  -- NEW: Differentiate tablets
+    when match(user_agent, 'ipad')
+    then 'tablet-ios'      -- NEW: Differentiate iPad
+    when match(user_agent, 'iphone|ipod')
+    then 'mobile-ios'
+    else 'desktop'
+END as device
+```
+
+### Adding Extracted Fields
+
+Extract additional fields from payload:
+
+```sql Custom Fields
+JSONExtractString(payload, 'utm_source') as utm_source,
+JSONExtractString(payload, 'utm_campaign') as utm_campaign,
+JSONExtractString(payload, 'screen_width') as screen_width
+```
+
+<Warning>
+**Schema Changes**: Adding fields to the pipe output requires updating downstream materialized views and endpoints that depend on it.
+</Warning>
+
+---
+
+## Next Steps
+
+<CardGroup cols={3}>
+  <Card title="Materialized Views" icon="layer-group" href="/data-platform/materialized-views">
+    See how MVs consume analytics_hits
+  </Card>
+  <Card title="Datasources" icon="database" href="/data-platform/datasources">
+    Review the underlying datasource schemas
+  </Card>
+  <Card title="API Endpoints" icon="code" href="/api/current-visitors">
+    Explore endpoint pipes that query this data
+  </Card>
+</CardGroup>

@@ -1,0 +1,474 @@
+---
+title: 'Web Vitals'
+description: 'Track Core Web Vitals and performance metrics to monitor user experience'
+---
+
+## Overview
+
+The Tinybird tracker integrates with Google's [web-vitals](https://www.npmjs.com/package/web-vitals) library to automatically capture Core Web Vitals metrics. Monitor real-world performance data from your users' browsers.
+
+## Enabling Web Vitals
+
+Add the `web-vitals` attribute to your tracker script:
+
+```html
+<script
+  src="https://unpkg.com/@tinybirdco/flock.js"
+  data-token="YOUR_TRACKER_TOKEN"
+  web-vitals="true"
+></script>
+```
+
+<Note>
+  You can also use `data-web-vitals="true"` - both formats are supported.
+</Note>
+
+## Tracked Metrics
+
+The tracker automatically monitors all Core Web Vitals:
+
+<CardGroup cols={2}>
+  <Card title="LCP" icon="image">
+    **Largest Contentful Paint**
+    
+    Load performance - measures when the largest content element becomes visible
+    
+    **Good:** < 2.5s
+  </Card>
+  
+  <Card title="FCP" icon="eye">
+    **First Contentful Paint**
+    
+    First paint time - when the first content appears on screen
+    
+    **Good:** < 1.8s
+  </Card>
+  
+  <Card title="INP" icon="hand-pointer">
+    **Interaction to Next Paint**
+    
+    Interaction responsiveness - delay between user action and visual response
+    
+    **Good:** < 200ms
+  </Card>
+  
+  <Card title="CLS" icon="arrows-maximize">
+    **Cumulative Layout Shift**
+    
+    Visual stability - measures unexpected layout shifts
+    
+    **Good:** < 0.1
+  </Card>
+  
+  <Card title="TTFB" icon="bolt">
+    **Time to First Byte**
+    
+    Server responsiveness - time until browser receives first byte
+    
+    **Good:** < 500ms
+  </Card>
+</CardGroup>
+
+## How It Works
+
+### Implementation
+
+From the source code (`middleware/src/index.js:43-47`):
+
+```javascript
+var webVitals = null;
+if (document.currentScript && 
+    (document.currentScript.getAttribute('web-vitals') === 'true' || 
+     document.currentScript.getAttribute('data-web-vitals') === 'true')) {
+  webVitals = require('web-vitals')
+}
+```
+
+### Metric Collection
+
+The tracker registers callbacks for each metric (`middleware/src/index.js:331-359`):
+
+```javascript
+if (webVitals) {
+  function sendMetric(metric) {
+    try {
+      const { country, locale } = getCountryAndLocale();
+      _sendEvent('web_vital', {
+        name: metric.name,
+        value: metric.value,
+        delta: metric.delta,
+        rating: metric.rating,
+        id: metric.id,
+        navigationType: metric.navigationType,
+        pathname: window.location.pathname,
+        href: window.location.href,
+        'user-agent': window.navigator.userAgent,
+        locale,
+        location: country,
+        referrer: document.referrer,
+      });
+    } catch (error) {
+      console.error('Error sending web vital:', error);
+    }
+  }
+
+  if(webVitals.onCLS) webVitals.onCLS(sendMetric);
+  if(webVitals.onFCP) webVitals.onFCP(sendMetric);
+  if(webVitals.onLCP) webVitals.onLCP(sendMetric);
+  if(webVitals.onTTFB) webVitals.onTTFB(sendMetric);
+  if(webVitals.onINP) webVitals.onINP(sendMetric);
+}
+```
+
+## Event Data Structure
+
+Each web vital is sent as a separate event with `action: "web_vital"`:
+
+```json
+{
+  "timestamp": "2024-03-11T14:23:45.123Z",
+  "action": "web_vital",
+  "version": "1",
+  "session_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+  "payload": {
+    "name": "LCP",
+    "value": 1250.5,
+    "delta": 1250.5,
+    "rating": "good",
+    "id": "v3-1752067824029-4726354841567",
+    "navigationType": "navigate",
+    "pathname": "/products",
+    "href": "https://example.com/products",
+    "user-agent": "Mozilla/5.0...",
+    "locale": "en-US",
+    "location": "US",
+    "referrer": "https://google.com"
+  }
+}
+```
+
+### Payload Fields
+
+<ParamField path="name" type="string">
+  Metric identifier: `LCP`, `FCP`, `INP`, `CLS`, or `TTFB`
+</ParamField>
+
+<ParamField path="value" type="number">
+  The metric value in milliseconds (or unitless for CLS)
+</ParamField>
+
+<ParamField path="delta" type="number">
+  Change since last report (for metrics that can update multiple times)
+</ParamField>
+
+<ParamField path="rating" type="string">
+  Performance rating: `good`, `needs-improvement`, or `poor`
+  
+  Based on thresholds defined by Google:
+  - **LCP:** Good < 2.5s, Poor > 4s
+  - **FCP:** Good < 1.8s, Poor > 3s
+  - **INP:** Good < 200ms, Poor > 500ms
+  - **CLS:** Good < 0.1, Poor > 0.25
+  - **TTFB:** Good < 500ms, Poor > 1500ms
+</ParamField>
+
+<ParamField path="id" type="string">
+  Unique identifier for this metric instance
+</ParamField>
+
+<ParamField path="navigationType" type="string">
+  Type of navigation: `navigate`, `reload`, `back-forward`, or `prerender`
+</ParamField>
+
+<ParamField path="pathname" type="string">
+  Page path where the metric was recorded
+</ParamField>
+
+<ParamField path="href" type="string">
+  Full URL where the metric was recorded
+</ParamField>
+
+## Example Metrics
+
+Real-world examples from the README:
+
+```json
+{"name":"LCP","value":68,"delta":68,"id":"v3-1752067824029-4726354841567","pathname":"/","href":"http://localhost:8081/"}
+{"name":"TTFB","value":41.10000002384186,"delta":41.10000002384186,"id":"v3-1752067821037-7353415626830","pathname":"/","href":"http://localhost:8081/"}
+{"name":"FCP","value":120,"delta":120,"id":"v3-1752067821037-7485331818919","pathname":"/","href":"http://localhost:8081/"}
+{"name":"INP","value":0,"delta":0,"id":"v3-1752067821037-7066346355405","pathname":"/","href":"http://localhost:8081/"}
+{"name":"CLS","value":0,"delta":0,"id":"v3-1752067821037-6535975895510","pathname":"/","href":"http://localhost:8081/"}
+```
+
+## Interpreting the Metrics
+
+<Tabs>
+  <Tab title="LCP (Load Performance)">
+    **Largest Contentful Paint** measures when the main content loads.
+    
+    | Value | Rating | Status |
+    |-------|--------|---------|
+    | < 2500ms | Good | ✅ Excellent |
+    | 2500-4000ms | Needs Improvement | ⚠️ Fair |
+    | > 4000ms | Poor | ❌ Needs work |
+    
+    **Common issues:**
+    - Slow server response times
+    - Large images without optimization
+    - Render-blocking JavaScript/CSS
+    
+    **Example from data:**
+    ```json
+    {"name":"LCP","value":68,"rating":"good"}
+    ```
+    68ms is excellent!
+  </Tab>
+  
+  <Tab title="TTFB (Server Speed)">
+    **Time to First Byte** measures server responsiveness.
+    
+    | Value | Rating | Status |
+    |-------|--------|---------|
+    | < 500ms | Good | ✅ Excellent |
+    | 500-1500ms | Needs Improvement | ⚠️ Fair |
+    | > 1500ms | Poor | ❌ Needs work |
+    
+    **Common issues:**
+    - Slow backend processing
+    - Database query performance
+    - Server location vs user location
+    
+    **Example from data:**
+    ```json
+    {"name":"TTFB","value":41.1,"rating":"good"}
+    ```
+    41ms is excellent!
+  </Tab>
+  
+  <Tab title="FCP (Perceived Speed)">
+    **First Contentful Paint** measures perceived load speed.
+    
+    | Value | Rating | Status |
+    |-------|--------|---------|
+    | < 1800ms | Good | ✅ Excellent |
+    | 1800-3000ms | Needs Improvement | ⚠️ Fair |
+    | > 3000ms | Poor | ❌ Needs work |
+    
+    **Common issues:**
+    - Render-blocking resources
+    - Large DOM size
+    - Slow font loading
+    
+    **Example from data:**
+    ```json
+    {"name":"FCP","value":120,"rating":"good"}
+    ```
+    120ms is excellent!
+  </Tab>
+  
+  <Tab title="INP (Responsiveness)">
+    **Interaction to Next Paint** measures responsiveness to user input.
+    
+    | Value | Rating | Status |
+    |-------|--------|---------|
+    | < 200ms | Good | ✅ Excellent |
+    | 200-500ms | Needs Improvement | ⚠️ Fair |
+    | > 500ms | Poor | ❌ Needs work |
+    
+    **Common issues:**
+    - Heavy JavaScript execution
+    - Long tasks blocking main thread
+    - Unoptimized event handlers
+    
+    **Example from data:**
+    ```json
+    {"name":"INP","value":0,"rating":"good"}
+    ```
+    0ms means no interactions yet or instant response
+  </Tab>
+  
+  <Tab title="CLS (Visual Stability)">
+    **Cumulative Layout Shift** measures visual stability.
+    
+    | Value | Rating | Status |
+    |-------|--------|---------|
+    | < 0.1 | Good | ✅ Excellent |
+    | 0.1-0.25 | Needs Improvement | ⚠️ Fair |
+    | > 0.25 | Poor | ❌ Needs work |
+    
+    **Common issues:**
+    - Images without dimensions
+    - Ads/embeds without reserved space
+    - Dynamically injected content
+    
+    **Example from data:**
+    ```json
+    {"name":"CLS","value":0,"rating":"good"}
+    ```
+    0 is perfect - no layout shifts!
+  </Tab>
+</Tabs>
+
+## When Metrics Are Reported
+
+<AccordionGroup>
+  <Accordion title="TTFB - Immediately">
+    Reported as soon as the first byte is received from the server.
+  </Accordion>
+  
+  <Accordion title="FCP - First Paint">
+    Reported when the first content pixel is painted.
+  </Accordion>
+  
+  <Accordion title="LCP - When Stable">
+    Reported when the largest content element is painted. Can update multiple times if larger elements load later.
+  </Accordion>
+  
+  <Accordion title="INP - On Interaction">
+    Reported after user interactions (clicks, taps, keyboard). Updates as more interactions occur.
+  </Accordion>
+  
+  <Accordion title="CLS - Continuously">
+    Reported and updated throughout the page session as layout shifts occur.
+  </Accordion>
+</AccordionGroup>
+
+<Info>
+  Some metrics report multiple times as they get more accurate. The `delta` field shows the change since the last report.
+</Info>
+
+## Complete Example
+
+```html
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>My Fast Website</title>
+    
+    <!-- Tinybird Analytics with Web Vitals -->
+    <script
+      defer
+      src="https://unpkg.com/@tinybirdco/flock.js"
+      data-token="p.eyJ1IjogImFiY2QxMjM0In0..."
+      web-vitals="true"
+    ></script>
+  </head>
+  <body>
+    <h1>Welcome</h1>
+    <p>Your content here...</p>
+  </body>
+</html>
+```
+
+## Analyzing Web Vitals Data
+
+Once you're collecting Web Vitals, you can analyze them in your Tinybird workspace:
+
+### Query Examples
+
+<CodeGroup>
+```sql Average by Metric
+SELECT
+  JSONExtractString(payload, 'name') as metric,
+  avg(JSONExtractFloat(payload, 'value')) as avg_value,
+  quantile(0.75)(JSONExtractFloat(payload, 'value')) as p75_value
+FROM analytics_events
+WHERE action = 'web_vital'
+GROUP BY metric
+```
+
+```sql Performance by Page
+SELECT
+  JSONExtractString(payload, 'pathname') as page,
+  JSONExtractString(payload, 'name') as metric,
+  avg(JSONExtractFloat(payload, 'value')) as avg_value
+FROM analytics_events
+WHERE action = 'web_vital'
+GROUP BY page, metric
+ORDER BY avg_value DESC
+```
+
+```sql Performance Over Time
+SELECT
+  toStartOfHour(timestamp) as hour,
+  JSONExtractString(payload, 'name') as metric,
+  avg(JSONExtractFloat(payload, 'value')) as avg_value
+FROM analytics_events
+WHERE action = 'web_vital'
+GROUP BY hour, metric
+ORDER BY hour DESC
+```
+</CodeGroup>
+
+## Best Practices
+
+<CardGroup cols={2}>
+  <Card title="Monitor Percentiles" icon="chart-line">
+    Look at p75 and p95 percentiles, not just averages. These show what most users experience.
+  </Card>
+  
+  <Card title="Segment by Device" icon="mobile">
+    Mobile devices often have different performance characteristics than desktop.
+  </Card>
+  
+  <Card title="Track Over Time" icon="clock">
+    Monitor trends to catch regressions early. Set up alerts for degradation.
+  </Card>
+  
+  <Card title="Compare Pages" icon="code-compare">
+    Identify which pages need optimization by comparing metrics across routes.
+  </Card>
+</CardGroup>
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="No Web Vitals Data">
+    **Check:**
+    1. `web-vitals="true"` attribute is present
+    2. Script is loading successfully (check browser console)
+    3. Events are reaching Tinybird (check data source)
+    4. Browser supports Web Vitals API (modern browsers only)
+  </Accordion>
+  
+  <Accordion title="Unexpected Values">
+    **Common causes:**
+    - Values are in milliseconds, not seconds (except CLS)
+    - Some metrics update multiple times per page load
+    - Different navigation types affect metrics
+    - Browser extensions can impact measurements
+  </Accordion>
+  
+  <Accordion title="High CLS Values">
+    **Common causes:**
+    - Images without width/height attributes
+    - Ads loading dynamically
+    - Web fonts causing layout shifts (FOUT/FOIT)
+    - Content injected above existing content
+  </Accordion>
+</AccordionGroup>
+
+## Browser Support
+
+Web Vitals tracking requires modern browser APIs:
+
+- ✅ Chrome 90+
+- ✅ Edge 90+
+- ✅ Opera 76+
+- ⚠️ Safari (partial support)
+- ⚠️ Firefox (partial support)
+
+<Note>
+  The tracker gracefully degrades - if Web Vitals aren't supported, page views and custom events still work.
+</Note>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Configuration" icon="gear" href="/tracking/configuration">
+    Explore advanced configuration options
+  </Card>
+  <Card title="Custom Events" icon="bolt" href="/tracking/custom-events">
+    Learn about tracking custom events
+  </Card>
+</CardGroup>

@@ -1,0 +1,321 @@
+---
+title: Dashboard Deployment
+description: Deploy the Tinybird Web Analytics Dashboard to production with Vercel
+---
+
+The dashboard is optimized for deployment on Vercel, but can be deployed to any platform that supports Next.js applications.
+
+## Prerequisites
+
+Before deploying, ensure you have:
+
+<Steps>
+  <Step title="Tinybird Workspace">
+    A Tinybird workspace with the Web Analytics data project deployed
+  </Step>
+  <Step title="Admin Token">
+    A Tinybird admin token or token with read permissions for the analytics pipes
+  </Step>
+  <Step title="Repository Access">
+    The dashboard code in a Git repository (GitHub, GitLab, or Bitbucket)
+  </Step>
+</Steps>
+
+## Deploy to Vercel
+
+The fastest way to deploy the dashboard is using Vercel's GitHub integration.
+
+### Option 1: Deploy with Vercel Button
+
+<Card title="Deploy to Vercel" icon="bolt">
+  Click the "Deploy" button to automatically set up the dashboard on Vercel:
+  
+  [![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new)
+</Card>
+
+### Option 2: Manual Deployment
+
+<Steps>
+  <Step title="Import Repository">
+    1. Go to [vercel.com/new](https://vercel.com/new)
+    2. Import your Git repository
+    3. Select the `dashboard` folder as the root directory
+  </Step>
+  
+  <Step title="Configure Build Settings">
+    Vercel will automatically detect Next.js. Verify these settings:
+    
+    - **Framework Preset**: Next.js
+    - **Build Command**: `pnpm build` (or `npm run build`)
+    - **Output Directory**: `.next`
+    - **Install Command**: `pnpm install` (or `npm install`)
+  </Step>
+  
+  <Step title="Add Environment Variables">
+    Configure the required environment variables (see below)
+  </Step>
+  
+  <Step title="Deploy">
+    Click "Deploy" and wait for the build to complete
+  </Step>
+</Steps>
+
+## Environment Variables
+
+Configure these environment variables in your Vercel project settings:
+
+### Required Variables
+
+<CodeGroup>
+```bash .env.example
+# Tinybird Configuration (server-only, required)
+TINYBIRD_TOKEN=your-tinybird-token
+TINYBIRD_HOST=https://api.tinybird.co
+
+# Dashboard URL (public)
+NEXT_PUBLIC_TINYBIRD_DASHBOARD_URL=https://your-dashboard.vercel.app
+```
+</CodeGroup>
+
+<ParamField path="TINYBIRD_TOKEN" type="string" required>
+  Your Tinybird admin token or read token. Get it from [Tinybird Console → Tokens](https://cloud.tinybird.co/tokens).
+  
+  <Warning>
+    This is a **server-only** variable. Never expose it in client-side code.
+  </Warning>
+</ParamField>
+
+<ParamField path="TINYBIRD_HOST" type="string" required>
+  Your Tinybird API host URL. Common values:
+  - `https://api.tinybird.co` (EU Shared)
+  - `https://api.us-east.tinybird.co` (US East)
+  - `https://api.us-east.aws.tinybird.co` (AWS US East)
+  - `https://api.eu-central-1.aws.tinybird.co` (AWS EU Central)
+</ParamField>
+
+<ParamField path="NEXT_PUBLIC_TINYBIRD_DASHBOARD_URL" type="string" required>
+  The public URL of your deployed dashboard (e.g., `https://analytics.yourdomain.com`).
+  
+  For local development, use `http://localhost:3000`.
+</ParamField>
+
+### Optional Variables
+
+<CodeGroup>
+```bash .env.example (optional)
+# Tracker token for analytics (public, optional)
+NEXT_PUBLIC_TINYBIRD_TRACKER_TOKEN=your-tracker-token
+
+# Dashboard Basic Auth (server-only, defaults to admin/admin if not set)
+DASHBOARD_USERNAME=admin
+DASHBOARD_PASSWORD=changeme
+
+# Optional: Set to "true" to disable auth during development
+DISABLE_AUTH=false
+
+# Optional: AI Chat
+NEXT_PUBLIC_ASK_TINYBIRD_ENDPOINT=https://ask-tb.tinybird.live/api/chat
+```
+</CodeGroup>
+
+<ParamField path="NEXT_PUBLIC_TINYBIRD_TRACKER_TOKEN" type="string">
+  Token for tracking analytics on the dashboard itself (dogfooding). Create a token with append permissions to the `analytics_events` Data Source.
+</ParamField>
+
+<ParamField path="DASHBOARD_USERNAME" type="string" default="admin">
+  Username for basic authentication. See [Authentication](/dashboard/authentication) for details.
+</ParamField>
+
+<ParamField path="DASHBOARD_PASSWORD" type="string" default="admin">
+  Password for basic authentication.
+  
+  <Warning>
+    Change the default password in production!
+  </Warning>
+</ParamField>
+
+<ParamField path="DISABLE_AUTH" type="boolean" default="false">
+  Set to `true` to disable authentication during development. Never use in production.
+</ParamField>
+
+<ParamField path="NEXT_PUBLIC_ASK_TINYBIRD_ENDPOINT" type="string">
+  API endpoint for the AI chat feature. Use the default endpoint or deploy your own.
+</ParamField>
+
+### Multi-Tenant Configuration
+
+<ParamField path="TENANT_ID" type="string">
+  If using multi-tenant mode, specify the tenant ID to filter data.
+</ParamField>
+
+## Vercel Configuration
+
+The dashboard includes a Next.js configuration optimized for Vercel:
+
+<CodeGroup>
+```javascript next.config.js
+/** @type {import('next').NextConfig} */
+const nextConfig = {
+  reactStrictMode: true,
+  transpilePackages: ['@tinybirdco/analytics-client', '@tinybirdco/sdk'],
+  i18n: {
+    locales: ['en'],
+    defaultLocale: 'en',
+  },
+}
+
+module.exports = nextConfig
+```
+</CodeGroup>
+
+<Note>
+  The `transpilePackages` option ensures the Tinybird packages are properly bundled for deployment.
+</Note>
+
+## Custom Domain
+
+To use a custom domain with your Vercel deployment:
+
+<Steps>
+  <Step title="Add Domain in Vercel">
+    1. Go to your project settings in Vercel
+    2. Navigate to "Domains"
+    3. Add your custom domain (e.g., `analytics.yourdomain.com`)
+  </Step>
+  
+  <Step title="Configure DNS">
+    Add a CNAME record pointing to `cname.vercel-dns.com` in your DNS provider
+  </Step>
+  
+  <Step title="Update Environment Variable">
+    Update `NEXT_PUBLIC_TINYBIRD_DASHBOARD_URL` to your custom domain
+  </Step>
+</Steps>
+
+## Alternative Deployment Platforms
+
+While Vercel is recommended, you can deploy to other platforms:
+
+### Docker
+
+<CodeGroup>
+```dockerfile Dockerfile
+FROM node:18-alpine
+
+WORKDIR /app
+
+COPY package*.json ./
+RUN npm install
+
+COPY . .
+RUN npm run build
+
+EXPOSE 3000
+
+CMD ["npm", "start"]
+```
+</CodeGroup>
+
+<CodeGroup>
+```bash Build and run
+docker build -t tinybird-dashboard .
+docker run -p 3000:3000 --env-file .env tinybird-dashboard
+```
+</CodeGroup>
+
+### Node.js Server
+
+<CodeGroup>
+```bash Deploy to any Node.js hosting
+# Install dependencies
+pnpm install
+
+# Build for production
+pnpm build
+
+# Start the server
+pnpm start
+```
+</CodeGroup>
+
+<Note>
+  Ensure your hosting platform supports Node.js 18+ and can serve the Next.js application.
+</Note>
+
+## Production Checklist
+
+Before launching to production:
+
+<Steps>
+  <Step title="Security">
+    - [ ] Change default authentication credentials
+    - [ ] Set up HTTPS/SSL certificate
+    - [ ] Keep `TINYBIRD_TOKEN` secret (server-only)
+    - [ ] Set `DISABLE_AUTH=false`
+  </Step>
+  
+  <Step title="Configuration">
+    - [ ] Verify all environment variables are set
+    - [ ] Test authentication flow
+    - [ ] Confirm data is loading correctly
+    - [ ] Check all time ranges work
+  </Step>
+  
+  <Step title="Performance">
+    - [ ] Enable caching in Tinybird pipes
+    - [ ] Configure SWR revalidation intervals
+    - [ ] Test load times
+    - [ ] Monitor Vercel analytics
+  </Step>
+  
+  <Step title="Monitoring">
+    - [ ] Set up error tracking (Sentry, etc.)
+    - [ ] Configure uptime monitoring
+    - [ ] Review Vercel logs
+    - [ ] Test AI chat functionality
+  </Step>
+</Steps>
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Build fails with 'Module not found' error">
+    Ensure `transpilePackages` is configured in `next.config.js` to include Tinybird packages:
+    
+    ```javascript
+    transpilePackages: ['@tinybirdco/analytics-client', '@tinybirdco/sdk']
+    ```
+  </Accordion>
+  
+  <Accordion title="Dashboard shows authentication error">
+    1. Verify `TINYBIRD_TOKEN` is set correctly
+    2. Check the token has read permissions for all analytics pipes
+    3. Confirm `TINYBIRD_HOST` matches your workspace region
+  </Accordion>
+  
+  <Accordion title="No data appears in charts">
+    1. Verify the tracker is sending events to Tinybird
+    2. Check that pipes are published and working in Tinybird Console
+    3. Inspect browser console for API errors
+    4. Verify time range selection includes data
+  </Accordion>
+  
+  <Accordion title="AI chat not working">
+    Ensure `NEXT_PUBLIC_ASK_TINYBIRD_ENDPOINT` is set to a valid endpoint. The default endpoint is:
+    
+    ```
+    https://ask-tb.tinybird.live/api/chat
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Configure Authentication" icon="lock" href="/dashboard/authentication">
+    Set up secure access to your dashboard
+  </Card>
+  <Card title="Customize the Dashboard" icon="palette" href="/dashboard/customization">
+    Adapt the UI to match your brand
+  </Card>
+</CardGroup>

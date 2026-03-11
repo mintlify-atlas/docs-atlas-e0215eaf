@@ -1,0 +1,205 @@
+---
+title: 'KPIs'
+description: 'Get summary KPIs with visits, pageviews, bounce rate, and average session duration'
+---
+
+## Overview
+
+The `kpis` endpoint returns time-series KPI data including visits, pageviews, bounce rate, and average session duration. It supports optional comparison with the previous period to calculate growth percentages.
+
+## Endpoint
+
+```
+GET https://api.tinybird.co/v0/pipes/kpis.json
+```
+
+## Parameters
+
+<ParamField query="date_from" type="string" optional>
+  Starting day (YYYY-MM-DD format). Defaults to 7 days ago.
+</ParamField>
+
+<ParamField query="date_to" type="string" optional>
+  Finishing day (YYYY-MM-DD format). Defaults to today.
+</ParamField>
+
+<ParamField query="tenant_id" type="string" optional>
+  Filter by tenant ID
+</ParamField>
+
+<ParamField query="domain" type="string" optional>
+  Filter by domain
+</ParamField>
+
+<ParamField query="include_previous_period" type="string" optional>
+  Set to "true" to include previous period comparison and growth percentages
+</ParamField>
+
+## SQL Query
+
+The endpoint uses a multi-node pipeline:
+
+### Date Calculations
+
+```sql
+WITH
+    {% if defined(date_from) %}
+        toStartOfDay(toDate({{ String(date_from, description="Starting day") }})) as current_start,
+    {% else %} toStartOfDay(timestampAdd(today(), interval -7 day)) as current_start,
+    {% end %}
+    {% if defined(date_to) %}
+        toStartOfDay(toDate({{ String(date_to, description="Finishing day") }})) as current_end
+    {% else %} toStartOfDay(today()) as current_end
+    {% end %}
+SELECT
+    current_start,
+    current_end,
+    dateDiff('day', current_start, current_end) + 1 as period_days,
+    timestampAdd(current_start, interval -dateDiff('day', current_start, current_end) - 1 day) as previous_start,
+    timestampAdd(current_end, interval -dateDiff('day', current_start, current_end) - 1 day) as previous_end
+```
+
+### Session Metrics
+
+The endpoint aggregates session data from `analytics_sessions_mv` (or `analytics_hits` for same-day queries) to calculate:
+- Unique visits per session
+- Pageviews per session
+- Bounce rate (single-page sessions)
+- Average session duration
+
+## Response
+
+<ResponseField name="date" type="date" required>
+  The date for this data point
+</ResponseField>
+
+<ResponseField name="visits" type="uint64" required>
+  Number of unique visits (sessions)
+</ResponseField>
+
+<ResponseField name="pageviews" type="uint64" required>
+  Total number of pageviews
+</ResponseField>
+
+<ResponseField name="bounce_rate" type="float64" required>
+  Bounce rate (0-1, where 1 = 100%)
+</ResponseField>
+
+<ResponseField name="avg_session_sec" type="float64" required>
+  Average session duration in seconds
+</ResponseField>
+
+<ResponseField name="previous_visits" type="uint64">
+  Previous period visits (only when include_previous_period=true)
+</ResponseField>
+
+<ResponseField name="previous_pageviews" type="uint64">
+  Previous period pageviews (only when include_previous_period=true)
+</ResponseField>
+
+<ResponseField name="previous_bounce_rate" type="float64">
+  Previous period bounce rate (only when include_previous_period=true)
+</ResponseField>
+
+<ResponseField name="previous_avg_session_sec" type="float64">
+  Previous period average session duration (only when include_previous_period=true)
+</ResponseField>
+
+<ResponseField name="visits_growth_percentage" type="float64">
+  Percentage change in visits (only when include_previous_period=true)
+</ResponseField>
+
+<ResponseField name="pageviews_growth_percentage" type="float64">
+  Percentage change in pageviews (only when include_previous_period=true)
+</ResponseField>
+
+<ResponseField name="bounce_rate_growth_percentage" type="float64">
+  Percentage change in bounce rate (only when include_previous_period=true)
+</ResponseField>
+
+<ResponseField name="avg_session_sec_growth_percentage" type="float64">
+  Percentage change in average session duration (only when include_previous_period=true)
+</ResponseField>
+
+## TypeScript Usage
+
+```typescript
+import { Tinybird } from '@tinybirdco/sdk';
+import type { KpisParams, KpisOutput } from './endpoints';
+
+const tb = new Tinybird({ token: process.env.TINYBIRD_TOKEN });
+
+// Get KPIs for the last 7 days (default)
+const result = await tb.exec<KpisOutput>('kpis');
+result.data.forEach(day => {
+  console.log(`${day.date}: ${day.visits} visits, ${day.pageviews} pageviews`);
+});
+
+// Get KPIs for a specific date range
+const params: KpisParams = {
+  date_from: '2024-01-01',
+  date_to: '2024-01-31',
+  domain: 'example.com'
+};
+const rangeResult = await tb.exec<KpisOutput>('kpis', params);
+
+// Get KPIs with previous period comparison
+const comparisonParams: KpisParams = {
+  date_from: '2024-01-01',
+  date_to: '2024-01-07',
+  include_previous_period: 'true'
+};
+const comparisonResult = await tb.exec<KpisOutput>('kpis', comparisonParams);
+comparisonResult.data.forEach(day => {
+  console.log(`${day.date}: ${day.visits} visits (${day.visits_growth_percentage}% growth)`);
+});
+```
+
+## Example Response
+
+### Without Previous Period
+
+```json
+{
+  "data": [
+    {
+      "date": "2024-01-01",
+      "visits": 1523,
+      "pageviews": 4829,
+      "bounce_rate": 0.42,
+      "avg_session_sec": 145.6
+    },
+    {
+      "date": "2024-01-02",
+      "visits": 1678,
+      "pageviews": 5234,
+      "bounce_rate": 0.38,
+      "avg_session_sec": 152.3
+    }
+  ]
+}
+```
+
+### With Previous Period
+
+```json
+{
+  "data": [
+    {
+      "date": "2024-01-01",
+      "visits": 1523,
+      "pageviews": 4829,
+      "bounce_rate": 0.42,
+      "avg_session_sec": 145.6,
+      "previous_visits": 1401,
+      "previous_pageviews": 4321,
+      "previous_bounce_rate": 0.45,
+      "previous_avg_session_sec": 138.2,
+      "visits_growth_percentage": 8.71,
+      "pageviews_growth_percentage": 11.75,
+      "bounce_rate_growth_percentage": -6.67,
+      "avg_session_sec_growth_percentage": 5.35
+    }
+  ]
+}
+```

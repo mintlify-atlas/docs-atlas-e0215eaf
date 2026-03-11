@@ -1,122 +1,113 @@
 {
   "$schema": "https://mintlify.com/docs.json",
-  "theme": "mint",
-  "name": "Mint Starter Kit",
+  "name": "Tinybird Web Analytics",
+  "theme": "sequoia",
   "colors": {
-    "primary": "#16A34A",
-    "light": "#07C983",
-    "dark": "#15803D"
+    "primary": "#24f394",
+    "light": "#23996a",
+    "dark": "#244247"
   },
-  "favicon": "/favicon.svg",
+  "logo": {
+    "light": "https://media.brand.dev/53b443a7-44e4-4e28-8bdf-dd0701bacb03.svg",
+    "dark": "https://media.brand.dev/53b443a7-44e4-4e28-8bdf-dd0701bacb03.svg"
+  },
+  "navbar": {
+    "primary": {
+      "type": "github",
+      "href": "https://github.com/tinybirdco/web-analytics-starter-kit"
+    }
+  },
+  "footer": {
+    "socials": {
+      "github": "https://github.com/tinybirdco/web-analytics-starter-kit"
+    }
+  },
   "navigation": {
     "tabs": [
       {
-        "tab": "Guides",
+        "tab": "Documentation",
         "groups": [
           {
-            "group": "Getting started",
+            "group": "Get Started",
             "pages": [
-              "index",
-              "quickstart",
-              "development"
+              "introduction",
+              "quickstart"
             ]
           },
           {
-            "group": "Customization",
+            "group": "Tracking",
             "pages": [
-              "essentials/settings",
-              "essentials/navigation"
+              "tracking/installation",
+              "tracking/page-views",
+              "tracking/custom-events",
+              "tracking/web-vitals",
+              "tracking/configuration"
             ]
           },
           {
-            "group": "Writing content",
+            "group": "Dashboard",
             "pages": [
-              "essentials/markdown",
-              "essentials/code",
-              "essentials/images",
-              "essentials/reusable-snippets"
+              "dashboard/overview",
+              "dashboard/deployment",
+              "dashboard/authentication",
+              "dashboard/customization"
             ]
           },
           {
-            "group": "AI tools",
+            "group": "Data Platform",
             "pages": [
-              "ai-tools/cursor",
-              "ai-tools/claude-code",
-              "ai-tools/windsurf"
+              "data-platform/architecture",
+              "data-platform/datasources",
+              "data-platform/pipes",
+              "data-platform/materialized-views"
+            ]
+          },
+          {
+            "group": "Advanced",
+            "pages": [
+              "advanced/multi-tenancy",
+              "advanced/custom-attributes",
+              "advanced/proxy-setup",
+              "advanced/gdpr-compliance",
+              "advanced/local-development"
             ]
           }
         ]
       },
       {
-        "tab": "API reference",
+        "tab": "API Reference",
         "groups": [
           {
-            "group": "API documentation",
+            "group": "Core Endpoints",
             "pages": [
-              "api-reference/introduction"
+              "api/current-visitors",
+              "api/kpis",
+              "api/trend",
+              "api/top-pages",
+              "api/top-sources",
+              "api/top-browsers",
+              "api/top-devices",
+              "api/top-locations"
             ]
           },
           {
-            "group": "Endpoint examples",
+            "group": "Web Vitals",
             "pages": [
-              "api-reference/endpoint/get",
-              "api-reference/endpoint/create",
-              "api-reference/endpoint/delete",
-              "api-reference/endpoint/webhook"
+              "api/web-vitals-current",
+              "api/web-vitals-distribution",
+              "api/web-vitals-routes",
+              "api/web-vitals-timeseries"
+            ]
+          },
+          {
+            "group": "Configuration",
+            "pages": [
+              "api/domains",
+              "api/actions"
             ]
           }
         ]
       }
-    ],
-    "global": {
-      "anchors": [
-        {
-          "anchor": "Documentation",
-          "href": "https://mintlify.com/docs",
-          "icon": "book-open-cover"
-        },
-        {
-          "anchor": "Blog",
-          "href": "https://mintlify.com/blog",
-          "icon": "newspaper"
-        }
-      ]
-    }
-  },
-  "logo": {
-    "light": "/logo/light.svg",
-    "dark": "/logo/dark.svg"
-  },
-  "navbar": {
-    "links": [
-      {
-        "label": "Support",
-        "href": "mailto:hi@mintlify.com"
-      }
-    ],
-    "primary": {
-      "type": "button",
-      "label": "Dashboard",
-      "href": "https://dashboard.mintlify.com"
-    }
-  },
-  "contextual": {
-    "options": [
-     "copy",
-     "view",
-     "chatgpt",
-     "claude",
-     "perplexity",
-     "mcp",
-     "cursor",
-     "vscode"
-   ]
-  },
-  "footer": {
-    "socials": {
-      "x": "https://x.com/mintlify",
-      "github": "https://github.com/mintlify",
-      "linkedin": "https://linkedin.com/company/mintlify"
-    }
+    ]
   }
 }

@@ -1,0 +1,236 @@
+---
+title: "Web Vitals Timeseries"
+api: "GET /web_vitals_timeseries"
+description: "Get hourly time series data of web vitals quantile values for trend analysis and visualization"
+---
+
+Returns hourly aggregated web vitals data with percentile values, allowing you to visualize performance trends over time and identify patterns or anomalies.
+
+## Endpoint
+
+```
+GET https://api.tinybird.co/v0/pipes/web_vitals_timeseries.json
+```
+
+## Parameters
+
+<ParamField query="date_from" type="date" optional>
+  Start date for the time series (YYYY-MM-DD format). If not provided, returns recent data.
+</ParamField>
+
+<ParamField query="date_to" type="date" optional>
+  End date for the time series (YYYY-MM-DD format). If not provided, uses current date.
+</ParamField>
+
+<ParamField query="tenant_id" type="string" optional>
+  Filter results by tenant ID for multi-tenant applications.
+</ParamField>
+
+<ParamField query="domain" type="string" optional>
+  Filter results by domain name (e.g., "example.com").
+</ParamField>
+
+## Web Vitals Metrics Tracked
+
+This endpoint provides time series data for all five Core Web Vitals metrics:
+
+### LCP (Largest Contentful Paint)
+Measures loading performance over time.
+- **Excellent**: ≤2500ms
+- **Good**: ≤4000ms
+- **Poor**: >4000ms
+
+### TTFB (Time to First Byte)
+Measures server response time trends.
+- **Excellent**: ≤500ms
+- **Good**: ≤1000ms
+- **Poor**: >1000ms
+
+### FCP (First Contentful Paint)
+Measures perceived load speed over time.
+- **Excellent**: ≤1800ms
+- **Good**: ≤3000ms
+- **Poor**: >3000ms
+
+### INP (Interaction to Next Paint)
+Measures responsiveness trends.
+- **Excellent**: ≤200ms
+- **Good**: ≤500ms
+- **Poor**: >500ms
+
+### CLS (Cumulative Layout Shift)
+Measures visual stability patterns.
+- **Excellent**: ≤0.1
+- **Good**: ≤0.25
+- **Poor**: >0.25
+
+## Response Fields
+
+<ResponseField name="hour" type="datetime">
+  The hour timestamp for this data point (rounded to the start of the hour).
+</ResponseField>
+
+<ResponseField name="metric_name" type="string">
+  The name of the web vitals metric (LCP, TTFB, FCP, INP, or CLS).
+</ResponseField>
+
+<ResponseField name="p75" type="float">
+  75th percentile value for this hour. 75% of users experienced this value or better.
+</ResponseField>
+
+<ResponseField name="p90" type="float">
+  90th percentile value for this hour. 90% of users experienced this value or better.
+</ResponseField>
+
+<ResponseField name="p95" type="float">
+  95th percentile value for this hour. 95% of users experienced this value or better.
+</ResponseField>
+
+<ResponseField name="p99" type="float">
+  99th percentile value for this hour. 99% of users experienced this value or better.
+</ResponseField>
+
+<ResponseField name="measurements" type="integer">
+  Total number of measurements collected during this hour.
+</ResponseField>
+
+<ResponseField name="domain" type="string">
+  The domain this data was collected from.
+</ResponseField>
+
+## Example Request
+
+### Last 7 Days
+
+```bash
+curl -H "Authorization: Bearer YOUR_TOKEN" \
+  "https://api.tinybird.co/v0/pipes/web_vitals_timeseries.json?date_from=2024-01-01&date_to=2024-01-07&domain=example.com"
+```
+
+### Specific Date Range
+
+```bash
+curl -H "Authorization: Bearer YOUR_TOKEN" \
+  "https://api.tinybird.co/v0/pipes/web_vitals_timeseries.json?date_from=2024-01-15&date_to=2024-01-22"
+```
+
+## Example Response
+
+```json
+{
+  "data": [
+    {
+      "hour": "2024-01-01T00:00:00Z",
+      "metric_name": "LCP",
+      "p75": 2345.67,
+      "p90": 3456.78,
+      "p95": 4012.34,
+      "p99": 5234.56,
+      "measurements": 1523,
+      "domain": "example.com"
+    },
+    {
+      "hour": "2024-01-01T01:00:00Z",
+      "metric_name": "LCP",
+      "p75": 2289.45,
+      "p90": 3312.56,
+      "p95": 3945.67,
+      "p99": 5012.34,
+      "measurements": 1456,
+      "domain": "example.com"
+    },
+    {
+      "hour": "2024-01-01T00:00:00Z",
+      "metric_name": "TTFB",
+      "p75": 412.34,
+      "p90": 567.89,
+      "p95": 678.90,
+      "p99": 890.12,
+      "measurements": 1523,
+      "domain": "example.com"
+    },
+    {
+      "hour": "2024-01-01T01:00:00Z",
+      "metric_name": "TTFB",
+      "p75": 398.67,
+      "p90": 545.23,
+      "p95": 654.32,
+      "p99": 876.54,
+      "measurements": 1456,
+      "domain": "example.com"
+    },
+    {
+      "hour": "2024-01-01T00:00:00Z",
+      "metric_name": "FCP",
+      "p75": 1845.67,
+      "p90": 2456.78,
+      "p95": 2812.34,
+      "p99": 3234.56,
+      "measurements": 1523,
+      "domain": "example.com"
+    },
+    {
+      "hour": "2024-01-01T00:00:00Z",
+      "metric_name": "INP",
+      "p75": 178.90,
+      "p90": 234.56,
+      "p95": 312.34,
+      "p99": 456.78,
+      "measurements": 1245,
+      "domain": "example.com"
+    },
+    {
+      "hour": "2024-01-01T00:00:00Z",
+      "metric_name": "CLS",
+      "p75": 0.09,
+      "p90": 0.15,
+      "p95": 0.22,
+      "p99": 0.34,
+      "measurements": 1523,
+      "domain": "example.com"
+    }
+  ]
+}
+```
+
+## Percentile Interpretation
+
+Percentile values help you understand the distribution of your performance:
+
+- **p75 (75th percentile)**: The "typical" user experience. Google recommends optimizing to meet Web Vitals thresholds at p75.
+- **p90 (90th percentile)**: Captures most users but includes some outliers.
+- **p95 (95th percentile)**: Helps identify performance issues affecting a smaller subset of users.
+- **p99 (99th percentile)**: The worst-case scenarios, useful for identifying extreme performance problems.
+
+## Use Cases
+
+- **Performance Visualization**: Create line charts showing how metrics trend over time
+- **Anomaly Detection**: Identify unusual spikes or drops in performance
+- **Deployment Impact Analysis**: Compare performance before and after deployments
+- **Time-of-Day Patterns**: Discover if performance varies by time of day or day of week
+- **Capacity Planning**: Identify peak usage times and their performance impact
+- **SLA Monitoring**: Track whether performance meets service level agreements over time
+- **Regression Detection**: Quickly spot when performance degrades
+- **Seasonal Analysis**: Understand how performance changes during high-traffic periods
+
+## Visualization Examples
+
+### Time Series Line Chart
+
+Plot p75, p90, or p95 values over time to see trends. Each metric can be a separate line or separate chart.
+
+### Heatmap
+
+Create a heatmap showing performance intensity by hour and day of week to identify patterns.
+
+### Threshold Comparison
+
+Overlay the "Good" and "Excellent" thresholds on your time series to visualize how often you meet Web Vitals standards.
+
+## Notes
+
+- Hours with fewer than 5 measurements are excluded to ensure data quality
+- Data is aggregated at the start of each hour (e.g., 14:00:00 includes data from 14:00:00 to 14:59:59)
+- For real-time monitoring, query recent hours with shorter date ranges
+- Consider the p75 metric as your primary performance indicator, as it aligns with Google's Core Web Vitals assessment
+- Large date ranges may return substantial data - consider using data visualization tools that can handle time series efficiently

@@ -1,0 +1,207 @@
+---
+title: 'Domains'
+description: 'Returns domains for a tenant with first/last seen and total hits'
+---
+
+## Overview
+
+The `domains` endpoint is a configuration endpoint that lists all domains associated with a specific tenant in your web analytics system. This endpoint queries the `tenant_domains_mv` materialized view to provide aggregated statistics about domain usage, including when each domain was first and last seen, and the total number of hits.
+
+**Use Cases:**
+- Dashboard domain selection dropdowns
+- Multi-tenant domain management
+- Domain activity monitoring
+- Analytics configuration interfaces
+
+## Endpoint
+
+```
+GET /v0/pipes/domains.json
+```
+
+## Parameters
+
+<ParamField query="tenant_id" type="string" default="">
+  Tenant ID to filter domains by. When provided, returns only domains associated with this specific tenant. If empty or not provided, returns all domains.
+</ParamField>
+
+## Response
+
+Returns an array of domain objects sorted by total hits (descending) and domain name (ascending).
+
+<ResponseField name="domain" type="string" required>
+  The domain name (without protocol)
+</ResponseField>
+
+<ResponseField name="first_seen" type="DateTime" required>
+  Timestamp when this domain was first recorded in the analytics system
+</ResponseField>
+
+<ResponseField name="last_seen" type="DateTime" required>
+  Timestamp when this domain was last active (most recent hit)
+</ResponseField>
+
+<ResponseField name="total_hits" type="uint64" required>
+  Total number of hits (page views and events) recorded for this domain
+</ResponseField>
+
+## SQL Implementation
+
+The endpoint uses the following SQL query to aggregate domain statistics:
+
+```sql
+SELECT
+    domain,
+    minSimpleState(first_seen) AS first_seen,
+    maxSimpleState(last_seen) AS last_seen,
+    countMerge(total_hits) AS total_hits
+FROM tenant_domains_mv
+WHERE tenant_id = {{ String(tenant_id, description="Tenant ID to filter", default="") }}
+GROUP BY domain
+ORDER BY total_hits DESC, domain ASC
+```
+
+This query:
+- Aggregates domain data from the `tenant_domains_mv` materialized view
+- Uses ClickHouse aggregate functions (`minSimpleState`, `maxSimpleState`, `countMerge`)
+- Filters by tenant_id parameter
+- Orders results by popularity (total_hits) and alphabetically
+
+## TypeScript Usage
+
+### Type Definitions
+
+```typescript
+import { domains, type DomainsParams, type DomainsOutput } from './endpoints';
+
+// Parameter type
+type DomainsParams = {
+  tenant_id?: string;
+};
+
+// Response type
+type DomainsOutput = {
+  domain: string;
+  first_seen: Date;
+  last_seen: Date;
+  total_hits: bigint;
+};
+```
+
+### Basic Example
+
+```typescript
+import { Tinybird } from '@tinybirdco/sdk';
+import { domains } from './endpoints';
+
+const tb = new Tinybird({ token: process.env.TINYBIRD_TOKEN });
+
+// Fetch all domains for a specific tenant
+const result = await tb.query(domains, {
+  tenant_id: 'tenant_123'
+});
+
+console.log(result.data);
+// [
+//   {
+//     domain: 'example.com',
+//     first_seen: '2024-01-15T10:30:00Z',
+//     last_seen: '2024-03-10T15:45:00Z',
+//     total_hits: 152340n
+//   },
+//   {
+//     domain: 'app.example.com',
+//     first_seen: '2024-02-01T08:20:00Z',
+//     last_seen: '2024-03-10T14:30:00Z',
+//     total_hits: 98750n
+//   }
+// ]
+```
+
+### Building a Domain Selector
+
+```typescript
+import { Tinybird } from '@tinybirdco/sdk';
+import { domains } from './endpoints';
+
+async function getDomainOptions(tenantId: string) {
+  const tb = new Tinybird({ token: process.env.TINYBIRD_TOKEN });
+  
+  const result = await tb.query(domains, {
+    tenant_id: tenantId
+  });
+  
+  // Transform for UI dropdown
+  return result.data.map(item => ({
+    value: item.domain,
+    label: item.domain,
+    metadata: {
+      hits: Number(item.total_hits),
+      active: item.last_seen,
+      since: item.first_seen
+    }
+  }));
+}
+
+// Usage in React component
+const options = await getDomainOptions('tenant_123');
+```
+
+### Filtering Active Domains
+
+```typescript
+import { Tinybird } from '@tinybirdco/sdk';
+import { domains } from './endpoints';
+
+async function getActiveDomains(tenantId: string, hoursThreshold: number = 24) {
+  const tb = new Tinybird({ token: process.env.TINYBIRD_TOKEN });
+  
+  const result = await tb.query(domains, {
+    tenant_id: tenantId
+  });
+  
+  // Filter domains active within the threshold
+  const threshold = new Date(Date.now() - hoursThreshold * 60 * 60 * 1000);
+  
+  return result.data.filter(domain => 
+    new Date(domain.last_seen) >= threshold
+  );
+}
+```
+
+## Response Example
+
+```json
+{
+  "data": [
+    {
+      "domain": "example.com",
+      "first_seen": "2024-01-15T10:30:00Z",
+      "last_seen": "2024-03-10T15:45:00Z",
+      "total_hits": 152340
+    },
+    {
+      "domain": "app.example.com",
+      "first_seen": "2024-02-01T08:20:00Z",
+      "last_seen": "2024-03-10T14:30:00Z",
+      "total_hits": 98750
+    },
+    {
+      "domain": "staging.example.com",
+      "first_seen": "2024-02-15T12:00:00Z",
+      "last_seen": "2024-03-09T18:20:00Z",
+      "total_hits": 12580
+    }
+  ]
+}
+```
+
+## Notes
+
+<Note>
+  This endpoint queries a materialized view (`tenant_domains_mv`), which provides fast aggregated results. The data is pre-computed and updated periodically based on your Tinybird configuration.
+</Note>
+
+<Warning>
+  When `tenant_id` is empty or not provided, the endpoint may return domains across all tenants. Always specify a tenant_id in multi-tenant environments to ensure proper data isolation.
+</Warning>

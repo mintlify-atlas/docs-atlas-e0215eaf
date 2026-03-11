@@ -1,0 +1,216 @@
+---
+title: 'Top Locations'
+description: 'Get top visiting countries ranked by visits with optional previous period comparison'
+---
+
+## Overview
+
+The `top_locations` endpoint returns the top visiting countries ranked by number of visits. It supports pagination and optional comparison with the previous period.
+
+## Endpoint
+
+```
+GET https://api.tinybird.co/v0/pipes/top_locations.json
+```
+
+## Parameters
+
+<ParamField query="date_from" type="string" optional>
+  Start date (YYYY-MM-DD format). Defaults to 7 days ago.
+</ParamField>
+
+<ParamField query="date_to" type="string" optional>
+  End date (YYYY-MM-DD format). Defaults to today.
+</ParamField>
+
+<ParamField query="tenant_id" type="string" optional>
+  Filter by tenant ID
+</ParamField>
+
+<ParamField query="domain" type="string" optional>
+  Filter by domain
+</ParamField>
+
+<ParamField query="include_previous_period" type="string" optional>
+  Set to "true" to include previous period comparison and growth percentages
+</ParamField>
+
+<ParamField query="skip" type="int32" optional default="0">
+  Skip for pagination (offset)
+</ParamField>
+
+<ParamField query="limit" type="int32" optional default="50">
+  Limit for pagination (max results)
+</ParamField>
+
+## SQL Query
+
+The endpoint aggregates location data from `analytics_pages_mv`:
+
+```sql
+SELECT
+    location,
+    uniqMerge(visits) as current_visits,
+    countMerge(hits) as current_hits
+FROM analytics_pages_mv
+WHERE date >= (SELECT current_start FROM date_calculations)
+    AND date <= (SELECT current_end FROM date_calculations)
+    {% if defined(tenant_id) %}
+    AND tenant_id = {{ String(tenant_id, description="Filter by tenant ID") }}
+    {% end %}
+    {% if defined(domain) %}
+    AND domain = {{ String(domain, description="Filter by domain") }}
+    {% end %}
+GROUP BY location
+```
+
+## Response
+
+<ResponseField name="location" type="string" required>
+  The country code or location identifier
+</ResponseField>
+
+<ResponseField name="visits" type="uint64" required>
+  Number of unique visits from this location
+</ResponseField>
+
+<ResponseField name="hits" type="uint64" required>
+  Total number of pageviews from this location
+</ResponseField>
+
+<ResponseField name="previous_visits" type="uint64">
+  Previous period visits (only when include_previous_period=true)
+</ResponseField>
+
+<ResponseField name="previous_hits" type="uint64">
+  Previous period pageviews (only when include_previous_period=true)
+</ResponseField>
+
+<ResponseField name="visits_growth_percentage" type="float64">
+  Percentage change in visits (only when include_previous_period=true)
+</ResponseField>
+
+<ResponseField name="hits_growth_percentage" type="float64">
+  Percentage change in pageviews (only when include_previous_period=true)
+</ResponseField>
+
+## TypeScript Usage
+
+```typescript
+import { Tinybird } from '@tinybirdco/sdk';
+import type { TopLocationsParams, TopLocationsOutput } from './endpoints';
+
+const tb = new Tinybird({ token: process.env.TINYBIRD_TOKEN });
+
+// Get top 50 locations (default)
+const result = await tb.exec<TopLocationsOutput>('top_locations');
+result.data.forEach(location => {
+  console.log(`${location.location}: ${location.visits} visits, ${location.hits} pageviews`);
+});
+
+// Get top locations for a specific date range
+const params: TopLocationsParams = {
+  date_from: '2024-01-01',
+  date_to: '2024-01-31',
+  domain: 'example.com',
+  limit: 10
+};
+const rangeResult = await tb.exec<TopLocationsOutput>('top_locations', params);
+
+// Get top locations with previous period comparison
+const comparisonParams: TopLocationsParams = {
+  date_from: '2024-01-01',
+  date_to: '2024-01-07',
+  include_previous_period: 'true',
+  limit: 20
+};
+const comparisonResult = await tb.exec<TopLocationsOutput>('top_locations', comparisonParams);
+comparisonResult.data.forEach(location => {
+  console.log(`${location.location}: ${location.visits} visits (${location.visits_growth_percentage}% growth)`);
+});
+
+// Paginate through results
+const page1Params: TopLocationsParams = {
+  skip: 0,
+  limit: 10
+};
+const page2Params: TopLocationsParams = {
+  skip: 10,
+  limit: 10
+};
+const page1 = await tb.exec<TopLocationsOutput>('top_locations', page1Params);
+const page2 = await tb.exec<TopLocationsOutput>('top_locations', page2Params);
+
+// Calculate top regions
+const locationResult = await tb.exec<TopLocationsOutput>('top_locations', { limit: 10 });
+const totalVisits = locationResult.data.reduce((sum, l) => sum + Number(l.visits), 0);
+locationResult.data.forEach(location => {
+  const percentage = (Number(location.visits) / totalVisits * 100).toFixed(2);
+  console.log(`${location.location}: ${percentage}%`);
+});
+```
+
+## Example Response
+
+### Without Previous Period
+
+```json
+{
+  "data": [
+    {
+      "location": "US",
+      "visits": 8234,
+      "hits": 18456
+    },
+    {
+      "location": "GB",
+      "visits": 3421,
+      "hits": 7865
+    },
+    {
+      "location": "DE",
+      "visits": 2876,
+      "hits": 6543
+    },
+    {
+      "location": "FR",
+      "visits": 2134,
+      "hits": 4987
+    }
+  ]
+}
+```
+
+### With Previous Period
+
+```json
+{
+  "data": [
+    {
+      "location": "US",
+      "visits": 8234,
+      "hits": 18456,
+      "previous_visits": 7654,
+      "previous_hits": 17234,
+      "visits_growth_percentage": 7.58,
+      "hits_growth_percentage": 7.09
+    },
+    {
+      "location": "GB",
+      "visits": 3421,
+      "hits": 7865,
+      "previous_visits": 2987,
+      "previous_hits": 6876,
+      "visits_growth_percentage": 14.53,
+      "hits_growth_percentage": 14.38
+    }
+  ]
+}
+```
+
+## Notes
+
+- Locations are typically represented as ISO 3166-1 alpha-2 country codes (e.g., "US", "GB", "DE")
+- Location data is derived from IP address geolocation
+- Results are ordered by visits in descending order
+- Use pagination parameters for large result sets

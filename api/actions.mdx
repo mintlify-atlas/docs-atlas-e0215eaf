@@ -1,0 +1,382 @@
+---
+title: 'Actions'
+description: 'Get distinct action types with sample payload for each tenant/domain'
+---
+
+## Overview
+
+The `actions` endpoint is a configuration endpoint that retrieves distinct custom actions tracked in your web analytics system. Actions represent user interactions beyond standard page views, such as button clicks, form submissions, feature usage, or any custom events you're tracking.
+
+This endpoint queries the `tenant_actions_mv` materialized view and returns each unique action with its most recent payload, last occurrence timestamp, and total count.
+
+**Use Cases:**
+- Action selection dropdowns in analytics dashboards
+- Discovering what actions are being tracked
+- Debugging event tracking implementations
+- Building custom event analytics interfaces
+- Monitoring action usage patterns
+
+## Endpoint
+
+```
+GET /v0/pipes/actions.json
+```
+
+## Parameters
+
+<ParamField query="tenant_id" type="string" default="">
+  Tenant ID to filter actions by. When provided, returns only actions associated with this specific tenant. If empty or not provided, returns all actions.
+</ParamField>
+
+<ParamField query="action_filter" type="string" optional>
+  SQL LIKE pattern to filter action names. Use wildcards (%) to match patterns.
+  
+  **Examples:**
+  - `%cli_%` - matches actions containing "cli_"
+  - `button_%` - matches actions starting with "button_"
+  - `%_click` - matches actions ending with "_click"
+</ParamField>
+
+## Response
+
+Returns an array of action objects sorted by last_seen (descending), then domain and action name (ascending).
+
+<ResponseField name="domain" type="string" required>
+  The domain where this action was recorded
+</ResponseField>
+
+<ResponseField name="action" type="string" required>
+  The action identifier/name (e.g., "button_click", "form_submit", "feature_used")
+</ResponseField>
+
+<ResponseField name="last_payload" type="string" required>
+  The most recent payload data associated with this action. This is typically a JSON string containing additional event metadata.
+</ResponseField>
+
+<ResponseField name="last_seen" type="DateTime" required>
+  Timestamp when this action was last recorded
+</ResponseField>
+
+<ResponseField name="total_occurrences" type="uint64" required>
+  Total number of times this action has been recorded
+</ResponseField>
+
+## SQL Implementation
+
+The endpoint uses the following SQL query to aggregate action statistics:
+
+```sql
+SELECT
+    domain,
+    action,
+    anySimpleState(last_payload) AS last_payload,
+    maxSimpleState(last_seen) AS last_seen,
+    countMerge(total_occurrences) AS total_occurrences
+FROM tenant_actions_mv
+WHERE tenant_id = {{ String(tenant_id, description="Tenant ID to filter", default="") }}
+{% if defined(action_filter) %}
+    AND action like {{String(action_filter, description="A like filter for actions", example="%cli_%")}}
+{% end %}
+GROUP BY domain, action
+ORDER BY last_seen DESC, domain ASC, action ASC
+```
+
+This query:
+- Aggregates action data from the `tenant_actions_mv` materialized view
+- Uses ClickHouse aggregate functions (`anySimpleState`, `maxSimpleState`, `countMerge`)
+- Filters by tenant_id and optional action pattern
+- Groups by domain and action to get distinct combinations
+- Orders by recency (last_seen) to show most recent actions first
+
+## TypeScript Usage
+
+### Type Definitions
+
+```typescript
+import { actions, type ActionsParams, type ActionsOutput } from './endpoints';
+
+// Parameter type
+type ActionsParams = {
+  tenant_id?: string;
+  action_filter?: string;
+};
+
+// Response type
+type ActionsOutput = {
+  domain: string;
+  action: string;
+  last_payload: string;
+  last_seen: Date;
+  total_occurrences: bigint;
+};
+```
+
+### Basic Example
+
+```typescript
+import { Tinybird } from '@tinybirdco/sdk';
+import { actions } from './endpoints';
+
+const tb = new Tinybird({ token: process.env.TINYBIRD_TOKEN });
+
+// Fetch all actions for a specific tenant
+const result = await tb.query(actions, {
+  tenant_id: 'tenant_123'
+});
+
+console.log(result.data);
+// [
+//   {
+//     domain: 'app.example.com',
+//     action: 'button_click',
+//     last_payload: '{"button_id":"signup","page":"/landing"}',
+//     last_seen: '2024-03-10T15:45:00Z',
+//     total_occurrences: 1520n
+//   },
+//   {
+//     domain: 'app.example.com',
+//     action: 'form_submit',
+//     last_payload: '{"form_name":"contact","fields":5}',
+//     last_seen: '2024-03-10T14:30:00Z',
+//     total_occurrences: 892n
+//   }
+// ]
+```
+
+### Filtering Actions by Pattern
+
+```typescript
+import { Tinybird } from '@tinybirdco/sdk';
+import { actions } from './endpoints';
+
+async function getCliActions(tenantId: string) {
+  const tb = new Tinybird({ token: process.env.TINYBIRD_TOKEN });
+  
+  // Get only CLI-related actions
+  const result = await tb.query(actions, {
+    tenant_id: tenantId,
+    action_filter: '%cli_%'
+  });
+  
+  return result.data;
+}
+
+// Usage
+const cliActions = await getCliActions('tenant_123');
+console.log(`Found ${cliActions.length} CLI actions`);
+```
+
+### Building an Action Analytics Dashboard
+
+```typescript
+import { Tinybird } from '@tinybirdco/sdk';
+import { actions } from './endpoints';
+
+interface ActionAnalytics {
+  name: string;
+  domain: string;
+  count: number;
+  lastSeen: Date;
+  samplePayload: Record<string, any>;
+}
+
+async function getActionAnalytics(
+  tenantId: string,
+  domain?: string
+): Promise<ActionAnalytics[]> {
+  const tb = new Tinybird({ token: process.env.TINYBIRD_TOKEN });
+  
+  const result = await tb.query(actions, {
+    tenant_id: tenantId
+  });
+  
+  // Filter by domain if specified
+  let filteredData = result.data;
+  if (domain) {
+    filteredData = result.data.filter(item => item.domain === domain);
+  }
+  
+  // Transform and parse payloads
+  return filteredData.map(item => {
+    let parsedPayload = {};
+    try {
+      parsedPayload = JSON.parse(item.last_payload);
+    } catch (e) {
+      // Handle non-JSON payloads
+      parsedPayload = { raw: item.last_payload };
+    }
+    
+    return {
+      name: item.action,
+      domain: item.domain,
+      count: Number(item.total_occurrences),
+      lastSeen: new Date(item.last_seen),
+      samplePayload: parsedPayload
+    };
+  });
+}
+
+// Usage
+const analytics = await getActionAnalytics('tenant_123', 'app.example.com');
+analytics.forEach(action => {
+  console.log(`${action.name}: ${action.count} times`);
+  console.log(`Sample data:`, action.samplePayload);
+});
+```
+
+### Creating Action Selector Component
+
+```typescript
+import { Tinybird } from '@tinybirdco/sdk';
+import { actions } from './endpoints';
+
+interface ActionOption {
+  value: string;
+  label: string;
+  domain: string;
+  count: number;
+  metadata: {
+    lastSeen: Date;
+    samplePayload: string;
+  };
+}
+
+async function getActionOptions(
+  tenantId: string,
+  domainFilter?: string
+): Promise<ActionOption[]> {
+  const tb = new Tinybird({ token: process.env.TINYBIRD_TOKEN });
+  
+  const result = await tb.query(actions, {
+    tenant_id: tenantId
+  });
+  
+  return result.data
+    .filter(item => !domainFilter || item.domain === domainFilter)
+    .map(item => ({
+      value: item.action,
+      label: `${item.action} (${Number(item.total_occurrences)})`,
+      domain: item.domain,
+      count: Number(item.total_occurrences),
+      metadata: {
+        lastSeen: new Date(item.last_seen),
+        samplePayload: item.last_payload
+      }
+    }));
+}
+
+// Usage in React
+const actionOptions = await getActionOptions('tenant_123', 'app.example.com');
+```
+
+### Monitoring Recent Actions
+
+```typescript
+import { Tinybird } from '@tinybirdco/sdk';
+import { actions } from './endpoints';
+
+async function getRecentActions(
+  tenantId: string,
+  minutesThreshold: number = 60
+) {
+  const tb = new Tinybird({ token: process.env.TINYBIRD_TOKEN });
+  
+  const result = await tb.query(actions, {
+    tenant_id: tenantId
+  });
+  
+  const threshold = new Date(Date.now() - minutesThreshold * 60 * 1000);
+  
+  return result.data.filter(action => 
+    new Date(action.last_seen) >= threshold
+  );
+}
+
+// Monitor actions in the last hour
+const recentActions = await getRecentActions('tenant_123', 60);
+console.log(`${recentActions.length} actions in the last hour`);
+```
+
+## Response Example
+
+```json
+{
+  "data": [
+    {
+      "domain": "app.example.com",
+      "action": "button_click",
+      "last_payload": "{\"button_id\":\"signup\",\"page\":\"/landing\"}",
+      "last_seen": "2024-03-10T15:45:00Z",
+      "total_occurrences": 1520
+    },
+    {
+      "domain": "app.example.com",
+      "action": "form_submit",
+      "last_payload": "{\"form_name\":\"contact\",\"fields\":5}",
+      "last_seen": "2024-03-10T14:30:00Z",
+      "total_occurrences": 892
+    },
+    {
+      "domain": "docs.example.com",
+      "action": "search_query",
+      "last_payload": "{\"query\":\"installation\",\"results\":12}",
+      "last_seen": "2024-03-10T13:15:00Z",
+      "total_occurrences": 3401
+    },
+    {
+      "domain": "app.example.com",
+      "action": "cli_command_run",
+      "last_payload": "{\"command\":\"deploy\",\"duration_ms\":2340}",
+      "last_seen": "2024-03-10T12:00:00Z",
+      "total_occurrences": 567
+    }
+  ]
+}
+```
+
+## Understanding Payloads
+
+The `last_payload` field contains the most recent payload data for each action. Payloads typically contain:
+
+- **Event context**: Page URL, component ID, user flow step
+- **Action metadata**: Button text, form fields, feature flags
+- **Performance data**: Duration, success/failure status
+- **Custom properties**: Any additional data passed during tracking
+
+```typescript
+// Example payload structures
+const buttonClickPayload = {
+  button_id: 'signup',
+  page: '/landing',
+  text: 'Get Started',
+  variant: 'primary'
+};
+
+const formSubmitPayload = {
+  form_name: 'contact',
+  fields: 5,
+  validation_errors: 0,
+  duration_ms: 15000
+};
+
+const cliCommandPayload = {
+  command: 'deploy',
+  args: ['--production'],
+  duration_ms: 2340,
+  exit_code: 0
+};
+```
+
+## Notes
+
+<Note>
+  This endpoint queries a materialized view (`tenant_actions_mv`), which provides fast aggregated results. The data is pre-computed and updated periodically based on your Tinybird configuration.
+</Note>
+
+<Warning>
+  The `action_filter` parameter uses SQL LIKE pattern matching. Be cautious with broad patterns like `%%` which may return large result sets. Always include specific prefixes or suffixes to narrow down results.
+</Warning>
+
+<Tip>
+  Use the `last_payload` field to understand the structure of your action data. This is especially useful when debugging tracking implementations or discovering what data is being captured.
+</Tip>

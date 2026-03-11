@@ -1,0 +1,403 @@
+---
+title: 'Datasources'
+description: 'Schema definitions for all Tinybird datasources in the Web Analytics Starter Kit'
+---
+
+## Overview
+
+Datasources are the foundation of your Tinybird data platform. This starter kit uses **6 datasources**:
+
+- 1 landing datasource for raw event ingestion
+- 5 materialized view target datasources for pre-aggregated metrics
+
+## Landing Datasource
+
+### analytics_events
+
+The primary ingestion point for all web analytics events.
+
+<CodeGroup>
+```typescript Definition
+export const analyticsEvents = defineDatasource("analytics_events", {
+  tokens: [{ token: trackerToken, scope: "APPEND" }],
+  description: "Analytics events landing data source",
+  schema: {
+    timestamp: t.dateTime(),
+    session_id: t.string().nullable(),
+    action: t.string().lowCardinality(),
+    version: t.string().lowCardinality(),
+    payload: t.string(),
+    tenant_id: t.string().default(""),
+    domain: t.string().default(""),
+  },
+  engine: engine.mergeTree({
+    partitionKey: "toYYYYMM(timestamp)",
+    sortingKey: ["tenant_id", "domain", "timestamp"],
+  }),
+});
+```
+
+```sql ClickHouse Schema
+CREATE TABLE analytics_events
+(
+    timestamp DateTime,
+    session_id Nullable(String),
+    action LowCardinality(String),
+    version LowCardinality(String),
+    payload String,
+    tenant_id String DEFAULT '',
+    domain String DEFAULT ''
+)
+ENGINE = MergeTree
+PARTITION BY toYYYYMM(timestamp)
+ORDER BY (tenant_id, domain, timestamp)
+```
+</CodeGroup>
+
+#### Schema Fields
+
+<ResponseField name="timestamp" type="DateTime" required>
+  Event timestamp - when the analytics event occurred
+</ResponseField>
+
+<ResponseField name="session_id" type="String" nullable>
+  Unique session identifier for grouping user activity
+</ResponseField>
+
+<ResponseField name="action" type="LowCardinality(String)" required>
+  Event action type (e.g., "page_hit", "click", "custom_event")
+  
+  <Tip>Low cardinality optimization reduces storage for fields with limited distinct values</Tip>
+</ResponseField>
+
+<ResponseField name="version" type="LowCardinality(String)" required>
+  Tracker version for schema evolution support
+</ResponseField>
+
+<ResponseField name="payload" type="String" required>
+  JSON-encoded event data containing:
+  - `domain`: Website domain
+  - `locale`: User locale
+  - `location`: Geographic location
+  - `referrer`: Traffic source URL
+  - `pathname`: Page path
+  - `href`: Full URL
+  - `user-agent`: Browser user agent string
+</ResponseField>
+
+<ResponseField name="tenant_id" type="String" default="">
+  Multi-tenancy identifier for data isolation
+</ResponseField>
+
+<ResponseField name="domain" type="String" default="">
+  Website domain (can also be extracted from payload as fallback)
+</ResponseField>
+
+#### Engine Configuration
+
+<ParamField path="partitionKey" type="string">
+  `toYYYYMM(timestamp)` - Monthly partitioning for efficient time-based queries
+</ParamField>
+
+<ParamField path="sortingKey" type="array">
+  `["tenant_id", "domain", "timestamp"]` - Optimizes filtering and range scans
+</ParamField>
+
+<Note>
+**Performance**: The sorting key is ordered by query filter frequency - most queries filter by tenant_id and domain first.
+</Note>
+
+---
+
+## Materialized View Datasources
+
+### analytics_pages_mv
+
+Aggregates page-level metrics for fast page analytics queries.
+
+<CodeGroup>
+```typescript Definition
+export const analyticsPagesMv = defineDatasource("analytics_pages_mv", {
+  jsonPaths: false,
+  schema: {
+    date: t.date(),
+    tenant_id: t.string(),
+    domain: t.string(),
+    device: t.string(),
+    browser: t.string(),
+    location: t.string(),
+    pathname: t.string(),
+    visits: t.aggregateFunction("uniq", t.string()),
+    hits: t.aggregateFunction("count", t.uint64()),
+  },
+  engine: engine.aggregatingMergeTree({
+    partitionKey: "toYYYYMM(date)",
+    sortingKey: [
+      "tenant_id",
+      "domain",
+      "date",
+      "device",
+      "browser",
+      "location",
+      "pathname",
+    ],
+  }),
+});
+```
+</CodeGroup>
+
+#### Aggregate Functions
+
+<ResponseField name="visits" type="AggregateFunction(uniq, String)">
+  Unique session count using ClickHouse's `uniqState` function
+  
+  **Merging**: Use `uniqMerge(visits)` to combine aggregates
+</ResponseField>
+
+<ResponseField name="hits" type="AggregateFunction(count, UInt64)">
+  Total page view count using ClickHouse's `countState` function
+  
+  **Merging**: Use `countMerge(hits)` to combine aggregates
+</ResponseField>
+
+<Info>
+**AggregatingMergeTree** automatically merges aggregate function states during background merges, enabling efficient incremental aggregation.
+</Info>
+
+---
+
+### analytics_sessions_mv
+
+Tracks session-level metrics including duration and hit counts.
+
+<CodeGroup>
+```typescript Definition
+export const analyticsSessionsMv = defineDatasource("analytics_sessions_mv", {
+  jsonPaths: false,
+  schema: {
+    date: t.date(),
+    session_id: t.string(),
+    tenant_id: t.string(),
+    domain: t.string(),
+    device: t.simpleAggregateFunction("any", t.string()),
+    browser: t.simpleAggregateFunction("any", t.string()),
+    location: t.simpleAggregateFunction("any", t.string()),
+    first_hit: t.simpleAggregateFunction("min", t.dateTime()),
+    latest_hit: t.simpleAggregateFunction("max", t.dateTime()),
+    hits: t.aggregateFunction("count", t.uint64()),
+  },
+  engine: engine.aggregatingMergeTree({
+    partitionKey: "toYYYYMM(date)",
+    sortingKey: ["tenant_id", "domain", "date", "session_id"],
+  }),
+});
+```
+</CodeGroup>
+
+#### Simple vs Regular Aggregates
+
+<AccordionGroup>
+  <Accordion title="simpleAggregateFunction vs aggregateFunction">
+    **Simple Aggregate Functions** (`any`, `min`, `max`):
+    - Lower overhead
+    - Don't require `-Merge` suffix for querying
+    - Use `anySimpleState`, `minSimpleState`, `maxSimpleState`
+    
+    **Regular Aggregate Functions** (`uniq`, `count`, `sum`):
+    - More complex state
+    - Require `-Merge` suffix: `uniqMerge()`, `countMerge()`
+    - More flexible for complex aggregations
+  </Accordion>
+</AccordionGroup>
+
+<ResponseField name="first_hit" type="SimpleAggregateFunction(min, DateTime)">
+  Timestamp of first page view in session
+</ResponseField>
+
+<ResponseField name="latest_hit" type="SimpleAggregateFunction(max, DateTime)">
+  Timestamp of most recent page view in session
+  
+  <Tip>Session duration = `latest_hit - first_hit`</Tip>
+</ResponseField>
+
+---
+
+### analytics_sources_mv
+
+Aggregates traffic source and referrer metrics.
+
+<CodeGroup>
+```typescript Definition
+export const analyticsSourcesMv = defineDatasource("analytics_sources_mv", {
+  jsonPaths: false,
+  schema: {
+    date: t.date(),
+    tenant_id: t.string(),
+    domain: t.string(),
+    device: t.string(),
+    browser: t.string(),
+    location: t.string(),
+    referrer: t.string(),
+    visits: t.aggregateFunction("uniq", t.string()),
+    hits: t.aggregateFunction("count", t.uint64()),
+  },
+  engine: engine.aggregatingMergeTree({
+    partitionKey: "toYYYYMM(date)",
+    sortingKey: [
+      "tenant_id",
+      "domain",
+      "date",
+      "device",
+      "browser",
+      "location",
+      "referrer",
+    ],
+  }),
+});
+```
+</CodeGroup>
+
+<ResponseField name="referrer" type="String">
+  Traffic source URL - external sites that referred visitors
+  
+  <Note>The materialization filters out same-domain referrers to track only external traffic sources</Note>
+</ResponseField>
+
+---
+
+### tenant_actions_mv
+
+Tracks all distinct action types per tenant and domain.
+
+<CodeGroup>
+```typescript Definition
+export const tenantActionsMv = defineDatasource("tenant_actions_mv", {
+  description: "Materialized datasource for storing distinct actions by tenant and domain",
+  jsonPaths: false,
+  schema: {
+    tenant_id: t.string(),
+    domain: t.string(),
+    action: t.string(),
+    last_payload: t.simpleAggregateFunction("any", t.string()),
+    last_seen: t.simpleAggregateFunction("max", t.dateTime()),
+    total_occurrences: t.aggregateFunction("count", t.uint64()),
+  },
+  engine: engine.aggregatingMergeTree({
+    partitionKey: "toYYYYMM(last_seen)",
+    sortingKey: ["tenant_id", "domain", "action"],
+  }),
+});
+```
+</CodeGroup>
+
+<Info>
+**Use Case**: This datasource powers action discovery and custom event tracking across your analytics platform.
+</Info>
+
+<ResponseField name="last_payload" type="SimpleAggregateFunction(any, String)">
+  Sample payload from most recent occurrence of this action
+</ResponseField>
+
+<ResponseField name="total_occurrences" type="AggregateFunction(count, UInt64)">
+  Total number of times this action has occurred
+</ResponseField>
+
+---
+
+### tenant_domains_mv
+
+Tracks active domains for each tenant with activity timestamps.
+
+<CodeGroup>
+```typescript Definition
+export const tenantDomainsMv = defineDatasource("tenant_domains_mv", {
+  description: "Materialized datasource for tracking domains per tenant",
+  jsonPaths: false,
+  schema: {
+    tenant_id: t.string(),
+    domain: t.string(),
+    first_seen: t.simpleAggregateFunction("min", t.dateTime()),
+    last_seen: t.simpleAggregateFunction("max", t.dateTime()),
+    total_hits: t.aggregateFunction("count", t.uint64()),
+  },
+  engine: engine.aggregatingMergeTree({
+    partitionKey: "toYYYYMM(last_seen)",
+    sortingKey: ["tenant_id", "domain"],
+  }),
+});
+```
+</CodeGroup>
+
+<Info>
+**Use Case**: Enables tenant management features like domain listing, activity tracking, and multi-domain analytics.
+</Info>
+
+---
+
+## Type Inference
+
+The SDK provides TypeScript type inference for all datasources:
+
+```typescript Type Exports
+export type AnalyticsEventsRow = InferRow<typeof analyticsEvents>;
+```
+
+**Usage:**
+
+```typescript Using Types
+import { type AnalyticsEventsRow } from "./datasources";
+
+const event: AnalyticsEventsRow = {
+  timestamp: new Date(),
+  session_id: "sess_123",
+  action: "page_hit",
+  version: "1.0",
+  payload: JSON.stringify({ pathname: "/home" }),
+  tenant_id: "tenant_1",
+  domain: "example.com",
+};
+```
+
+## Best Practices
+
+<CardGroup cols={2}>
+  <Card title="Partition Pruning" icon="scissors">
+    Always include date filters in queries to leverage partitioning:
+    ```sql
+    WHERE date >= '2024-01-01' AND date <= '2024-01-31'
+    ```
+  </Card>
+  
+  <Card title="Sorting Key Order" icon="arrow-down-1-9">
+    Filter by sorting key columns in order for best performance:
+    ```sql
+    WHERE tenant_id = 'x' AND domain = 'y' AND date >= ...
+    ```
+  </Card>
+  
+  <Card title="Low Cardinality" icon="layer-group">
+    Use `lowCardinality()` for fields with less than 10,000 distinct values to reduce storage
+  </Card>
+  
+  <Card title="JSON Payload" icon="brackets-curly">
+    Keep the payload field flexible for schema evolution without datasource migrations
+  </Card>
+</CardGroup>
+
+<Warning>
+**Important**: Changing datasource schemas requires data migrations. Design schemas carefully and use the JSON payload field for flexible attributes.
+</Warning>
+
+## Next Steps
+
+<CardGroup cols={3}>
+  <Card title="Pipes" icon="pipe" href="/data-platform/pipes">
+    Learn how pipes transform raw data
+  </Card>
+  <Card title="Materialized Views" icon="layer-group" href="/data-platform/materialized-views">
+    Understand how MVs populate these datasources
+  </Card>
+  <Card title="Architecture" icon="sitemap" href="/data-platform/architecture">
+    See how datasources fit in the overall architecture
+  </Card>
+</CardGroup>
