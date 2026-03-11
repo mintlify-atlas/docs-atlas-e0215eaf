@@ -1,0 +1,124 @@
+{
+  "projectType": "saas",
+  "projectName": "Tinybird Web Analytics",
+  "projectDescription": "A privacy-first, real-time web analytics platform built with Tinybird for tracking and analyzing website traffic.",
+  "theme": "sequoia",
+  "primaryColor": "#24f394",
+  "lightColor": "#23996a",
+  "darkColor": "#244247",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "quickstart"
+            ]
+          },
+          {
+            "group": "Tracking",
+            "pages": [
+              "tracking/installation",
+              "tracking/page-views",
+              "tracking/custom-events",
+              "tracking/web-vitals",
+              "tracking/configuration"
+            ]
+          },
+          {
+            "group": "Dashboard",
+            "pages": [
+              "dashboard/overview",
+              "dashboard/deployment",
+              "dashboard/authentication",
+              "dashboard/customization"
+            ]
+          },
+          {
+            "group": "Data Platform",
+            "pages": [
+              "data-platform/architecture",
+              "data-platform/datasources",
+              "data-platform/pipes",
+              "data-platform/materialized-views"
+            ]
+          },
+          {
+            "group": "Advanced",
+            "pages": [
+              "advanced/multi-tenancy",
+              "advanced/custom-attributes",
+              "advanced/proxy-setup",
+              "advanced/gdpr-compliance",
+              "advanced/local-development"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Core Endpoints",
+            "pages": [
+              "api/current-visitors",
+              "api/kpis",
+              "api/trend",
+              "api/top-pages",
+              "api/top-sources",
+              "api/top-browsers",
+              "api/top-devices",
+              "api/top-locations"
+            ]
+          },
+          {
+            "group": "Web Vitals",
+            "pages": [
+              "api/web-vitals-current",
+              "api/web-vitals-distribution",
+              "api/web-vitals-routes",
+              "api/web-vitals-timeseries"
+            ]
+          },
+          {
+            "group": "Configuration",
+            "pages": [
+              "api/domains",
+              "api/actions"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Real-time visitor tracking",
+    "Privacy-first analytics",
+    "Custom event tracking",
+    "Web vitals monitoring",
+    "Multi-tenancy support",
+    "Pre-built dashboard",
+    "TypeScript SDK",
+    "GDPR compliance"
+  ],
+  "publicApiSurface": [
+    "current_visitors",
+    "kpis",
+    "trend",
+    "top_pages",
+    "top_sources",
+    "top_browsers",
+    "top_devices",
+    "top_locations",
+    "domains",
+    "actions",
+    "web_vitals_current",
+    "web_vitals_distribution",
+    "web_vitals_routes",
+    "web_vitals_timeseries",
+    "Tinybird.trackEvent()"
+  ]
+}
