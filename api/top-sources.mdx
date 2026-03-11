@@ -97,49 +97,44 @@ GROUP BY referrer
 ## TypeScript Usage
 
 ```typescript
-import { Tinybird } from '@tinybirdco/sdk';
-import type { TopSourcesParams, TopSourcesOutput } from './endpoints';
+import { createAnalyticsClient } from '@tinybirdco/analytics-client';
 
-const tb = new Tinybird({ token: process.env.TINYBIRD_TOKEN });
+const tinybird = createAnalyticsClient();
 
 // Get top 50 traffic sources (default)
-const result = await tb.exec<TopSourcesOutput>('top_sources');
+const result = await tinybird.query.topSources();
 result.data.forEach(source => {
   console.log(`${source.referrer}: ${source.visits} visits, ${source.hits} pageviews`);
 });
 
 // Get top sources for a specific date range
-const params: TopSourcesParams = {
+const rangeResult = await tinybird.query.topSources({
   date_from: '2024-01-01',
   date_to: '2024-01-31',
   domain: 'example.com',
   limit: 10
-};
-const rangeResult = await tb.exec<TopSourcesOutput>('top_sources', params);
+});
 
 // Get top sources with previous period comparison
-const comparisonParams: TopSourcesParams = {
+const comparisonResult = await tinybird.query.topSources({
   date_from: '2024-01-01',
   date_to: '2024-01-07',
   include_previous_period: 'true',
   limit: 20
-};
-const comparisonResult = await tb.exec<TopSourcesOutput>('top_sources', comparisonParams);
+});
 comparisonResult.data.forEach(source => {
   console.log(`${source.referrer}: ${source.visits} visits (${source.visits_growth_percentage}% growth)`);
 });
 
 // Paginate through results
-const page1Params: TopSourcesParams = {
+const page1 = await tinybird.query.topSources({
   skip: 0,
   limit: 10
-};
-const page2Params: TopSourcesParams = {
+});
+const page2 = await tinybird.query.topSources({
   skip: 10,
   limit: 10
-};
-const page1 = await tb.exec<TopSourcesOutput>('top_sources', page1Params);
-const page2 = await tb.exec<TopSourcesOutput>('top_sources', page2Params);
+});
 ```
 
 ## Example Response

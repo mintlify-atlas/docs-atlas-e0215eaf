@@ -97,52 +97,47 @@ GROUP BY location
 ## TypeScript Usage
 
 ```typescript
-import { Tinybird } from '@tinybirdco/sdk';
-import type { TopLocationsParams, TopLocationsOutput } from './endpoints';
+import { createAnalyticsClient } from '@tinybirdco/analytics-client';
 
-const tb = new Tinybird({ token: process.env.TINYBIRD_TOKEN });
+const tinybird = createAnalyticsClient();
 
 // Get top 50 locations (default)
-const result = await tb.exec<TopLocationsOutput>('top_locations');
+const result = await tinybird.query.topLocations();
 result.data.forEach(location => {
   console.log(`${location.location}: ${location.visits} visits, ${location.hits} pageviews`);
 });
 
 // Get top locations for a specific date range
-const params: TopLocationsParams = {
+const rangeResult = await tinybird.query.topLocations({
   date_from: '2024-01-01',
   date_to: '2024-01-31',
   domain: 'example.com',
   limit: 10
-};
-const rangeResult = await tb.exec<TopLocationsOutput>('top_locations', params);
+});
 
 // Get top locations with previous period comparison
-const comparisonParams: TopLocationsParams = {
+const comparisonResult = await tinybird.query.topLocations({
   date_from: '2024-01-01',
   date_to: '2024-01-07',
   include_previous_period: 'true',
   limit: 20
-};
-const comparisonResult = await tb.exec<TopLocationsOutput>('top_locations', comparisonParams);
+});
 comparisonResult.data.forEach(location => {
   console.log(`${location.location}: ${location.visits} visits (${location.visits_growth_percentage}% growth)`);
 });
 
 // Paginate through results
-const page1Params: TopLocationsParams = {
+const page1 = await tinybird.query.topLocations({
   skip: 0,
   limit: 10
-};
-const page2Params: TopLocationsParams = {
+});
+const page2 = await tinybird.query.topLocations({
   skip: 10,
   limit: 10
-};
-const page1 = await tb.exec<TopLocationsOutput>('top_locations', page1Params);
-const page2 = await tb.exec<TopLocationsOutput>('top_locations', page2Params);
+});
 
 // Calculate top regions
-const locationResult = await tb.exec<TopLocationsOutput>('top_locations', { limit: 10 });
+const locationResult = await tinybird.query.topLocations({ limit: 10 });
 const totalVisits = locationResult.data.reduce((sum, l) => sum + Number(l.visits), 0);
 locationResult.data.forEach(location => {
   const percentage = (Number(location.visits) / totalVisits * 100).toFixed(2);

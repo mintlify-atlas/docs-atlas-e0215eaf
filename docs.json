@@ -102,6 +102,7 @@
           {
             "group": "Configuration",
             "pages": [
+              "api/domain",
               "api/domains",
               "api/actions"
             ]

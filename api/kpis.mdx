@@ -124,32 +124,29 @@ The endpoint aggregates session data from `analytics_sessions_mv` (or `analytics
 ## TypeScript Usage
 
 ```typescript
-import { Tinybird } from '@tinybirdco/sdk';
-import type { KpisParams, KpisOutput } from './endpoints';
+import { createAnalyticsClient } from '@tinybirdco/analytics-client';
 
-const tb = new Tinybird({ token: process.env.TINYBIRD_TOKEN });
+const tinybird = createAnalyticsClient();
 
 // Get KPIs for the last 7 days (default)
-const result = await tb.exec<KpisOutput>('kpis');
+const result = await tinybird.query.kpis();
 result.data.forEach(day => {
   console.log(`${day.date}: ${day.visits} visits, ${day.pageviews} pageviews`);
 });
 
 // Get KPIs for a specific date range
-const params: KpisParams = {
+const rangeResult = await tinybird.query.kpis({
   date_from: '2024-01-01',
   date_to: '2024-01-31',
   domain: 'example.com'
-};
-const rangeResult = await tb.exec<KpisOutput>('kpis', params);
+});
 
 // Get KPIs with previous period comparison
-const comparisonParams: KpisParams = {
+const comparisonResult = await tinybird.query.kpis({
   date_from: '2024-01-01',
   date_to: '2024-01-07',
   include_previous_period: 'true'
-};
-const comparisonResult = await tb.exec<KpisOutput>('kpis', comparisonParams);
+});
 comparisonResult.data.forEach(day => {
   console.log(`${day.date}: ${day.visits} visits (${day.visits_growth_percentage}% growth)`);
 });

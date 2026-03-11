@@ -97,49 +97,44 @@ GROUP BY pathname
 ## TypeScript Usage
 
 ```typescript
-import { Tinybird } from '@tinybirdco/sdk';
-import type { TopPagesParams, TopPagesOutput } from './endpoints';
+import { createAnalyticsClient } from '@tinybirdco/analytics-client';
 
-const tb = new Tinybird({ token: process.env.TINYBIRD_TOKEN });
+const tinybird = createAnalyticsClient();
 
 // Get top 50 pages (default)
-const result = await tb.exec<TopPagesOutput>('top_pages');
+const result = await tinybird.query.topPages();
 result.data.forEach(page => {
   console.log(`${page.pathname}: ${page.visits} visits, ${page.hits} pageviews`);
 });
 
 // Get top pages for a specific date range
-const params: TopPagesParams = {
+const rangeResult = await tinybird.query.topPages({
   date_from: '2024-01-01',
   date_to: '2024-01-31',
   domain: 'example.com',
   limit: 10
-};
-const rangeResult = await tb.exec<TopPagesOutput>('top_pages', params);
+});
 
 // Get top pages with previous period comparison
-const comparisonParams: TopPagesParams = {
+const comparisonResult = await tinybird.query.topPages({
   date_from: '2024-01-01',
   date_to: '2024-01-07',
   include_previous_period: 'true',
   limit: 20
-};
-const comparisonResult = await tb.exec<TopPagesOutput>('top_pages', comparisonParams);
+});
 comparisonResult.data.forEach(page => {
   console.log(`${page.pathname}: ${page.visits} visits (${page.visits_growth_percentage}% growth)`);
 });
 
 // Paginate through results
-const page1Params: TopPagesParams = {
+const page1 = await tinybird.query.topPages({
   skip: 0,
   limit: 10
-};
-const page2Params: TopPagesParams = {
+});
+const page2 = await tinybird.query.topPages({
   skip: 10,
   limit: 10
-};
-const page1 = await tb.exec<TopPagesOutput>('top_pages', page1Params);
-const page2 = await tb.exec<TopPagesOutput>('top_pages', page2Params);
+});
 ```
 
 ## Example Response

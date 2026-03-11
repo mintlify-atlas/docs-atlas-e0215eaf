@@ -48,28 +48,25 @@ WHERE timestamp >= (now() - interval 5 minute)
 ## TypeScript Usage
 
 ```typescript
-import { Tinybird } from '@tinybirdco/sdk';
-import type { CurrentVisitorsParams, CurrentVisitorsOutput } from './endpoints';
+import { createAnalyticsClient } from '@tinybirdco/analytics-client';
 
-const tb = new Tinybird({ token: process.env.TINYBIRD_TOKEN });
+const tinybird = createAnalyticsClient();
 
 // Get current visitors for all domains
-const result = await tb.exec<CurrentVisitorsOutput>('current_visitors');
+const result = await tinybird.query.currentVisitors({});
 console.log(`Current visitors: ${result.data[0].visits}`);
 
 // Get current visitors for a specific domain
-const params: CurrentVisitorsParams = {
+const domainResult = await tinybird.query.currentVisitors({
   domain: 'example.com'
-};
-const domainResult = await tb.exec<CurrentVisitorsOutput>('current_visitors', params);
-console.log(`Current visitors for ${params.domain}: ${domainResult.data[0].visits}`);
+});
+console.log(`Current visitors for ${domainResult.data[0].visits}`);
 
 // Get current visitors for a specific tenant
-const tenantParams: CurrentVisitorsParams = {
+const tenantResult = await tinybird.query.currentVisitors({
   tenant_id: 'tenant-123',
   domain: 'example.com'
-};
-const tenantResult = await tb.exec<CurrentVisitorsOutput>('current_visitors', tenantParams);
+});
 ```
 
 ## Example Response

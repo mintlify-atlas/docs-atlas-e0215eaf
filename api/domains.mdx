@@ -72,8 +72,6 @@ This query:
 ### Type Definitions
 
 ```typescript
-import { domains, type DomainsParams, type DomainsOutput } from './endpoints';
-
 // Parameter type
 type DomainsParams = {
   tenant_id?: string;
@@ -91,13 +89,12 @@ type DomainsOutput = {
 ### Basic Example
 
 ```typescript
-import { Tinybird } from '@tinybirdco/sdk';
-import { domains } from './endpoints';
+import { createAnalyticsClient } from '@tinybirdco/analytics-client';
 
-const tb = new Tinybird({ token: process.env.TINYBIRD_TOKEN });
+const tinybird = createAnalyticsClient();
 
 // Fetch all domains for a specific tenant
-const result = await tb.query(domains, {
+const result = await tinybird.query.domains({
   tenant_id: 'tenant_123'
 });
 
@@ -121,13 +118,12 @@ console.log(result.data);
 ### Building a Domain Selector
 
 ```typescript
-import { Tinybird } from '@tinybirdco/sdk';
-import { domains } from './endpoints';
+import { createAnalyticsClient } from '@tinybirdco/analytics-client';
 
 async function getDomainOptions(tenantId: string) {
-  const tb = new Tinybird({ token: process.env.TINYBIRD_TOKEN });
+  const tinybird = createAnalyticsClient();
   
-  const result = await tb.query(domains, {
+  const result = await tinybird.query.domains({
     tenant_id: tenantId
   });
   
@@ -150,13 +146,12 @@ const options = await getDomainOptions('tenant_123');
 ### Filtering Active Domains
 
 ```typescript
-import { Tinybird } from '@tinybirdco/sdk';
-import { domains } from './endpoints';
+import { createAnalyticsClient } from '@tinybirdco/analytics-client';
 
 async function getActiveDomains(tenantId: string, hoursThreshold: number = 24) {
-  const tb = new Tinybird({ token: process.env.TINYBIRD_TOKEN });
+  const tinybird = createAnalyticsClient();
   
-  const result = await tb.query(domains, {
+  const result = await tinybird.query.domains({
     tenant_id: tenantId
   });
   

@@ -70,22 +70,20 @@ select a.t, b.visits from timeseries a left join hits b on a.t = b.t order by a.
 ## TypeScript Usage
 
 ```typescript
-import { Tinybird } from '@tinybirdco/sdk';
-import type { TrendParams, TrendOutput } from './endpoints';
+import { createAnalyticsClient } from '@tinybirdco/analytics-client';
 
-const tb = new Tinybird({ token: process.env.TINYBIRD_TOKEN });
+const tinybird = createAnalyticsClient();
 
 // Get trend for all domains
-const result = await tb.exec<TrendOutput>('trend');
+const result = await tinybird.query.trend();
 result.data.forEach(point => {
   console.log(`${point.t}: ${point.visits ?? 0} visits`);
 });
 
 // Get trend for a specific domain
-const params: TrendParams = {
+const domainResult = await tinybird.query.trend({
   domain: 'example.com'
-};
-const domainResult = await tb.exec<TrendOutput>('trend', params);
+});
 
 // Use with a chart library
 const chartData = domainResult.data.map(point => ({
@@ -94,11 +92,10 @@ const chartData = domainResult.data.map(point => ({
 }));
 
 // Get trend for a specific tenant
-const tenantParams: TrendParams = {
+const tenantResult = await tinybird.query.trend({
   tenant_id: 'tenant-123',
   domain: 'example.com'
-};
-const tenantResult = await tb.exec<TrendOutput>('trend', tenantParams);
+});
 ```
 
 ## Example Response

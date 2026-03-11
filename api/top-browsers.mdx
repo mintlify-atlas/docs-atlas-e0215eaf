@@ -97,49 +97,44 @@ GROUP BY browser
 ## TypeScript Usage
 
 ```typescript
-import { Tinybird } from '@tinybirdco/sdk';
-import type { TopBrowsersParams, TopBrowsersOutput } from './endpoints';
+import { createAnalyticsClient } from '@tinybirdco/analytics-client';
 
-const tb = new Tinybird({ token: process.env.TINYBIRD_TOKEN });
+const tinybird = createAnalyticsClient();
 
 // Get top 50 browsers (default)
-const result = await tb.exec<TopBrowsersOutput>('top_browsers');
+const result = await tinybird.query.topBrowsers();
 result.data.forEach(browser => {
   console.log(`${browser.browser}: ${browser.visits} visits, ${browser.hits} pageviews`);
 });
 
 // Get top browsers for a specific date range
-const params: TopBrowsersParams = {
+const rangeResult = await tinybird.query.topBrowsers({
   date_from: '2024-01-01',
   date_to: '2024-01-31',
   domain: 'example.com',
   limit: 10
-};
-const rangeResult = await tb.exec<TopBrowsersOutput>('top_browsers', params);
+});
 
 // Get top browsers with previous period comparison
-const comparisonParams: TopBrowsersParams = {
+const comparisonResult = await tinybird.query.topBrowsers({
   date_from: '2024-01-01',
   date_to: '2024-01-07',
   include_previous_period: 'true',
   limit: 20
-};
-const comparisonResult = await tb.exec<TopBrowsersOutput>('top_browsers', comparisonParams);
+});
 comparisonResult.data.forEach(browser => {
   console.log(`${browser.browser}: ${browser.visits} visits (${browser.visits_growth_percentage}% growth)`);
 });
 
 // Paginate through results
-const page1Params: TopBrowsersParams = {
+const page1 = await tinybird.query.topBrowsers({
   skip: 0,
   limit: 10
-};
-const page2Params: TopBrowsersParams = {
+});
+const page2 = await tinybird.query.topBrowsers({
   skip: 10,
   limit: 10
-};
-const page1 = await tb.exec<TopBrowsersOutput>('top_browsers', page1Params);
-const page2 = await tb.exec<TopBrowsersOutput>('top_browsers', page2Params);
+});
 ```
 
 ## Example Response

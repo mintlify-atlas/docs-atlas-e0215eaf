@@ -86,6 +86,7 @@
           {
             "group": "Configuration",
             "pages": [
+              "api/domain",
               "api/domains",
               "api/actions"
             ]
@@ -113,6 +114,7 @@
     "top_browsers",
     "top_devices",
     "top_locations",
+    "domain",
     "domains",
     "actions",
     "web_vitals_current",

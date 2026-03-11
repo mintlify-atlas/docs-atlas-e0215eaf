@@ -1,0 +1,119 @@
+---
+title: domain
+description: Get the current active domain for the analytics workspace
+---
+
+## Overview
+
+The `domain` endpoint retrieves the most active domain from the last hour of analytics data. This is useful for dashboards that need to automatically determine which domain to display analytics for, especially when tracking multiple sites.
+
+## Endpoint
+
+```
+GET https://api.tinybird.co/v0/pipes/domain.json
+```
+
+## Parameters
+
+This endpoint takes no parameters and automatically determines the most active domain.
+
+## SQL Query
+
+The endpoint uses a two-stage approach to find the best domain:
+
+```sql
+WITH (
+  SELECT nullif(domainWithoutWWW(href),'') as domain
+  FROM analytics_hits
+  WHERE timestamp >= now() - interval 1 hour
+  GROUP BY domain
+  ORDER BY count(1) DESC
+  LIMIT 1
+) AS top_domain,
+(
+  SELECT domainWithoutWWW(href)
+  FROM analytics_hits
+  WHERE href NOT LIKE '%localhost%'
+  LIMIT 1
+) AS some_domain
+SELECT coalesce(top_domain, some_domain) AS domain
+```
+
+**Logic:**
+1. **Primary**: Returns the domain with the most hits in the last hour (excluding localhost and empty domains)
+2. **Fallback**: If no activity in the last hour, returns any non-localhost domain from the data
+3. Uses `coalesce` to prefer the active domain but fall back if needed
+
+## Response
+
+<ResponseField name="domain" type="string">
+  The most active domain, stripped of 'www.' prefix
+</ResponseField>
+
+## Example Response
+
+```json
+{
+  "data": [
+    {
+      "domain": "example.com"
+    }
+  ]
+}
+```
+
+## TypeScript Usage
+
+```typescript
+import { createAnalyticsClient } from '@tinybirdco/analytics-client';
+
+const tinybird = createAnalyticsClient();
+
+// Get the current active domain
+const result = await tinybird.query.domain();
+
+console.log('Active domain:', result.data[0].domain);
+
+// Type-safe access
+type DomainOutput = {
+  domain: string;
+};
+
+const domain: DomainOutput = result.data[0];
+```
+
+## Use Cases
+
+<CardGroup cols={2}>
+  <Card title="Dashboard Initialization" icon="display">
+    Automatically determine which domain to show on dashboard load
+  </Card>
+  <Card title="Domain Selector" icon="list">
+    Pre-select the most active domain in a dropdown
+  </Card>
+  <Card title="Single-Domain Setup" icon="globe">
+    Verify which domain is being tracked
+  </Card>
+  <Card title="Multi-Tenant Default" icon="building">
+    Determine the primary domain for a tenant
+  </Card>
+</CardGroup>
+
+## Notes
+
+<Note>
+  The endpoint strips the 'www.' prefix from domains using `domainWithoutWWW()` to normalize domain names.
+</Note>
+
+<Info>
+  This endpoint is particularly useful for dashboards that track multiple domains and need to intelligently select a default view.
+</Info>
+
+<Tip>
+  If you're building a domain selector, use this endpoint to determine the default selection, then use the [`domains`](/api/domains) endpoint to populate the full list of available domains.
+</Tip>
+
+## Related Endpoints
+
+- [domains](/api/domains) - List all domains for a tenant with activity metrics
+- [kpis](/api/kpis) - Get KPIs filtered by domain

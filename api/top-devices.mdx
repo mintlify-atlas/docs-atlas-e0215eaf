@@ -97,39 +97,36 @@ GROUP BY device
 ## TypeScript Usage
 
 ```typescript
-import { Tinybird } from '@tinybirdco/sdk';
-import type { TopDevicesParams, TopDevicesOutput } from './endpoints';
+import { createAnalyticsClient } from '@tinybirdco/analytics-client';
 
-const tb = new Tinybird({ token: process.env.TINYBIRD_TOKEN });
+const tinybird = createAnalyticsClient();
 
 // Get top 50 device types (default)
-const result = await tb.exec<TopDevicesOutput>('top_devices');
+const result = await tinybird.query.topDevices();
 result.data.forEach(device => {
   console.log(`${device.device}: ${device.visits} visits, ${device.hits} pageviews`);
 });
 
 // Get top devices for a specific date range
-const params: TopDevicesParams = {
+const rangeResult = await tinybird.query.topDevices({
   date_from: '2024-01-01',
   date_to: '2024-01-31',
   domain: 'example.com',
   limit: 10
-};
-const rangeResult = await tb.exec<TopDevicesOutput>('top_devices', params);
+});
 
 // Get top devices with previous period comparison
-const comparisonParams: TopDevicesParams = {
+const comparisonResult = await tinybird.query.topDevices({
   date_from: '2024-01-01',
   date_to: '2024-01-07',
   include_previous_period: 'true'
-};
-const comparisonResult = await tb.exec<TopDevicesOutput>('top_devices', comparisonParams);
+});
 comparisonResult.data.forEach(device => {
   console.log(`${device.device}: ${device.visits} visits (${device.visits_growth_percentage}% growth)`);
 });
 
 // Calculate device distribution
-const deviceResult = await tb.exec<TopDevicesOutput>('top_devices');
+const deviceResult = await tinybird.query.topDevices();
 const totalVisits = deviceResult.data.reduce((sum, d) => sum + Number(d.visits), 0);
 deviceResult.data.forEach(device => {
   const percentage = (Number(device.visits) / totalVisits * 100).toFixed(2);
